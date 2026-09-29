@@ -54,6 +54,8 @@ GPU_IMUL:
 
 
 ;====================
+FUZZDARK	.equ	$d80000		; iinc for spectres: -40 intensity (8.16, 24 bits)
+
 _R_DrawVisSprite::
 ;4 dag registers  8 register variables
 ;localoffset:8  regoffset:48  argoffset:100
@@ -121,6 +123,48 @@ blitwait1:
 	jr		EQ,blitwait1
 	nop
 	
+;
+; r2 = 1 for a spectre (colormap -1), r3 = framecount for the fuzz phase.
+; r2-r5 are otherwise unused by the column loop.
+;
+	load	(dv_vis+9),r0		; vis->colormap
+	moveq	#0,r2
+	cmpq	#-1,r0
+	movei	#dv_texturesource,scratch
+	jump	NE,(scratch)
+	nop
+;
+; spectre: A1 reads the screen being drawn instead of the patch, one row per
+; pixel, and SRCSHADE darkens what it reads.  Each post is a run of opaque
+; patch pixels, so the post list itself is the mask.
+;
+	moveq	#1,r2
+	movei	#_framecount,r3
+	load	(r3),r3
+	movei	#_workingscreen,r1
+	load	(r1),r1
+	movei	#$f02200,r0
+	store	r1,(r0)				; A1 base = screen
+	movei	#145952,r1
+	movei	#$f02204,r0
+	store	r1,(r0)				; A1 flags = screen window (160 wide, 16 bpp)
+	movei	#$10000,r1
+	movei	#$f02210,r0
+	store	r1,(r0)				; A1 step: +1 row per pixel
+	moveq	#0,r1
+	movei	#$f02214,r0
+	store	r1,(r0)				; no step fraction
+	movei	#FUZZDARK,r1
+	movei	#$f02270,r0
+	store	r1,(r0)				; iinc: darken
+	movei	#dv_sourcedone,r0
+	jump	T,(r0)
+	nop
+
+dv_texturesource:
+	movei	#145440,r1
+	movei	#$f02204,r0
+	store	r1,(r0)				; A1 flags = patch data (a spectre may have changed them)
 	movei	#15737344,r0
 	load	(dv_vis+14),r1		; vis->pixels
 	store	r1,(r0)
@@ -145,6 +189,7 @@ blitwait1:
 	shrq	#8,r1			; mask off high 8 bits
 	movei	#$f02270,r0
 	store	r1,(r0)			; blitter iinc
+dv_sourcedone:
 
 	
 ;===========================
@@ -269,6 +314,40 @@ blitwait2:
 	shlq	#16,r1
 	add		dv_x,r1
 	store	r1,(dv_blitter+12)
+
+	cmpq	#0,r2
+	movei	#dv_notfuzz,scratch
+	jump	EQ,(scratch)
+	nop
+;
+; fuzz: source rows are 1 or 2 below the destination (not yet overwritten,
+; since the blit runs downward), alternating in pairs of columns and
+; crawling with framecount.  Fall back to 0 if that would read past the
+; bottom of the view.  dv_bottom holds the pixel count here.
+;
+	move	dv_x,r5
+	add		r3,r5
+	shrq	#1,r5
+	moveq	#1,r0
+	and		r0,r5
+	addq	#1,r5				; offset = 1 or 2
+	move	dv_top,r0
+	add		dv_bottom,r0
+	add		r5,r0				; last source row + 1
+	movei	#180,r1				; SCREENHEIGHT
+	cmp		r0,r1
+	jr		PL,dv_fuzzok
+	nop
+	moveq	#0,r5
+dv_fuzzok:
+	move	dv_top,r0
+	add		r5,r0
+	shlq	#16,r0
+	add		dv_x,r0
+	store	r0,(dv_blitter+3)		; a1 pixel = (x, top+offset)
+	moveq	#0,r0
+	store	r0,(dv_blitter+6)		; a1 frac
+dv_notfuzz:
 
 	shlq	#16,dv_bottom
 	addq	#1,dv_bottom
@@ -1371,6 +1450,8 @@ _spropening::
  .extern _gpucodestart
  .extern _samplecount
  .extern _ref9_start
+ .extern _framecount
+ .extern _workingscreen
 
 	.phrase
 	.68000

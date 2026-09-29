@@ -1194,6 +1194,30 @@ L117:
 
 L118:
 
+;
+; spectres: the original never looked at MF_SHADOW, so they were drawn as
+; plain demons.  Mark them with colormap -1; R_DrawVisSprite draws them as
+; a darkened, displaced copy of the screen behind them (blitter fuzz).
+;
+ load (FP+24),r0 ; local thing
+ movei #100,r1				; offsetof(mobj_t, flags)
+ add r1,r0
+ load (r0),r0
+ btst #18,r0				; MF_SHADOW
+ movei #L118a,scratch
+ jump EQ,(scratch)
+ nop
+ move r15,r1 ;(vis)
+ moveq #0,r0
+ addq #32,r1
+ not r0					; -1
+ addq #4,r1				; &vis->colormap
+ store r0,(r1)
+ movei #L120,r0
+ jump T,(r0)
+ nop
+L118a:
+
  load (FP+24),r0 ; local thing
  movei #40,r1
  add r1,r0
