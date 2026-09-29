@@ -225,13 +225,13 @@ def test_matches_shipped_code(tics=6):
           f"{len(written)} ring slots; DSP instructions per tic: {per_tic}")
 
 
-def test_sound_starting_mid_window():
+def mid_window_matches_model(job):
     rng = random.Random(2)
     mem = build_scene(rng, 0x40000, mid_window_sound=True)
     w32(mem, SYM["_music"], 0)                      # sfx only
     startquad = r32(mem, SYM["_finalquad"])
     initial = ring(mem)
-    run_job(mem, "mixmusic")
+    run_job(mem, job)
     stopquad = r32(mem, SYM["_finalquad"])
     # reference model of x_MixSfx / x_PaintChannel / x_S_WriteOutSamples
     acc = [0] * ((stopquad - startquad) * 4)
@@ -248,11 +248,19 @@ def test_sound_starting_mid_window():
         smp = sat16(v >> 8)
         for dup in (0, 1):                          # 11 kHz sfx doubled for the 22 kHz isr
             slot = (startquad * 8 + 2 * j + dup) % RINGSAMPLES
-            assert out[slot] == smp, f"sample {j}: {out[slot]} != {smp}"
+            if out[slot] != smp:
+                return False
     touched = {(startquad * 8 + i) % RINGSAMPLES for i in range((stopquad - startquad) * 8)}
     assert all(out[i] == initial[i] for i in range(RINGSAMPLES) if i not in touched)
-    print(f"  ok  sound starting mid-window mixes at the right offset "
-          f"({(stopquad - startquad) * 8} samples checked)")
+    return (stopquad - startquad) * 8
+
+
+def test_sound_starting_mid_window():
+    n = mid_window_matches_model("mixmusic")
+    assert n, "mixmusic misplaces a sound that starts mid-window"
+    assert not mid_window_matches_model("sfx"), "expected the shipped mixer to show its offset bug"
+    print(f"  ok  sound starting mid-window mixes at the right offset ({n} samples); "
+          "the shipped mixer does not")
 
 
 def test_clock_catches_up():

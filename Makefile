@@ -232,16 +232,16 @@ r_phase5.o : r_phase5.gas
 	$(GAS2OBJ)
 #r_phase6.o : r_phase6.c
 #	$(C2OBJ)
-r_phase6.o : r_phase6.gas
-	$(GAS2OBJ)
+r_phase6.o : r_phase6.gas colblit.inc
+	mac -fb r_phase6.gas
 #r_phase7.o : r_phase7.c
 #	$(C2OBJ)
 r_phase7.o : r_phase7.gas
 	$(GAS2OBJ)
 #r_phase8.o : r_phase8.c
 #	$(C2OBJ)
-r_phase8.o : r_phase8.gas
-	$(GAS2OBJ)
+r_phase8.o : r_phase8.gas colblit.inc
+	mac -fb r_phase8.gas
 r_phase9.o : r_phase9.gas
 	$(GAS2OBJ)
 
