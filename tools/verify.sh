@@ -9,6 +9,8 @@
 #   2. every C file passes a syntax/type check with an m68k gcc
 #   3. every GPU and DSP overlay fits its local-RAM budget, counting the
 #      scratch arrays that live past `codeend` and leaving room for the stack
+#   4. tests/test_*.py: functional tests that run the GPU/DSP code on
+#      tools/jrisc.py, a JRISC model written from the manual
 #
 # Usage:  tools/verify.sh            (run from anywhere)
 #
@@ -56,6 +58,11 @@ fi
 
 echo "== local RAM budgets"
 python3 "$ROOT/tools/budget.py" "$OUT" || fail=1
+
+echo "== functional tests (tools/jrisc.py DSP/GPU model)"
+for t in "$ROOT"/tests/test_*.py; do
+	RMAC="$RMAC" python3 "$t" || { echo "FAIL  $(basename "$t")"; fail=1; }
+done
 
 if [ $fail -ne 0 ]; then
 	echo "VERIFY FAILED"; exit 1

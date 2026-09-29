@@ -62,7 +62,7 @@ tables.o \
 w_wad.o \
 z_zone.o \
 sfx.o	\
-music.o
+mixmusic.o
 
 jagdoom : $(OFILES)
 	aln -c mydoom.lnk 
@@ -247,7 +247,7 @@ r_phase9.o : r_phase9.gas
 
 sfx.o : sfx.gas
 	$(GAS2OBJ)
-music.o : music.gas
+mixmusic.o : mixmusic.gas
 	$(GAS2OBJ)
 
 

@@ -217,18 +217,23 @@ gotchannel:
 */
 
 extern	int	sfx_start;
-extern	int music_dspcode;
+extern	int	mixmusic_start;
+
+/* */
+/* music is mixed whenever a song is loaded and the music volume is up; */
+/* at volume 0 the cheaper sfx-only job runs and the song clock waits */
+/* */
+#define	MUSICACTIVE	(music && musicvolume)
 
 void S_UpdateSounds(void)
 {
 #ifdef JAGUAR
 
-	int st;
-
 /* */
 /* if sound was just turned off, clear out the buffer */
+/* (oldsfxvolume now means "was mixing last update") */
 /* */
-	if (!sfxvolume)
+	if (!sfxvolume && !MUSICACTIVE)
 	{
 		if (oldsfxvolume)
 		{
@@ -241,7 +246,7 @@ void S_UpdateSounds(void)
 	{
 		if (!oldsfxvolume)
 			finalquad = (samplecount >> 3) - 100;	/* don't mix lots of junk */
-		oldsfxvolume = sfxvolume;
+		oldsfxvolume = 1;
 	}
 	
 /* */
@@ -259,40 +264,37 @@ void S_UpdateSounds(void)
 
 /* */
 /* run the mixing in parallel on the dsp */
+/* */
+/* The shipped code ran music.gas synchronously and only outside of */
+/* gameplay, because it overwrote the sfx in the output ring.  mixmusic */
+/* mixes sfx and then adds music into the same window, so it can run */
+/* asynchronously every tic, in game or not.  It keeps the song clock in */
+/* step with the sfx window itself (see mixmusic.gas). */
 /*	 */
-
-	if (music)
-	{
-		
-		if (!musictime)
-			musictime = next_eventtime = samplecount + EXTERN_BUFFER_SIZE/2;
-		while (samplecount - musictime > EXTERN_BUFFER_SIZE)
-		{
-			musictime += EXTERN_BUFFER_SIZE;
-			next_eventtime += EXTERN_BUFFER_SIZE;
-		}
-		st = samplecount;
-		DSPFunction (&music_dspcode);
-		musictics = samplecount - st;
-
-	}
-	else
-	{
-#if 0
-((int *)0x1f8000)[ticon*2] = samplecount;
-((int *)0x1f8000)[ticon*2+1] = sfxsample;
-#endif
-		dspfinished = 0x1234;
-		dspcodestart = (int)&sfx_start;
-	}
+	dspfinished = 0x1234;
+	dspcodestart = MUSICACTIVE ? (int)&mixmusic_start : (int)&sfx_start;
 
 #endif
+}
+
+/* */
+/* the mixer runs asynchronously now, so never change or free the song */
+/* while the dsp might be reading it */
+/* */
+static void S_WaitDSP (void)
+{
+	while (DSPRead (&dspfinished) != 0xdef6)
+	;
 }
 
 void S_StartSong(int music_id, int looping)
 {
 
 	int lump;
+
+	if (music_memory)
+		S_StopSong ();		/* level music is replaced by the intermission's */
+	S_WaitDSP ();
 
 /*	next_eventtime = musictime; */
 	musictime = 0;
@@ -311,7 +313,11 @@ void S_StopSong(void)
 	int i;
 	int *ptr;
 
+	S_WaitDSP ();
+	if (!music_memory)
+		return;
 	Z_Free (music_memory);
+	music_memory = 0;
 	music = 0;							/* prevent the DSP from running */
 
 	ptr = soundbuffer+1;				/* clear music output buffer */

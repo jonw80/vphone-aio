@@ -67,7 +67,7 @@ tables.o
 w_wad.o         
 z_zone.o
 sfx.o
-music.o
+mixmusic.o
 
 lastobj.o
 

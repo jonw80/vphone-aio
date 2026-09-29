@@ -10,6 +10,7 @@
 
 extern 	int	cx, cy;
 extern	int		sfxvolume;		/* range from 0 to 255 */
+extern	int		musicvolume;	/* range from 0 to 255 */
 extern	int		controltype;				/* 0 to 5 */
 
 extern void print (int x, int y, char *string);
@@ -37,6 +38,7 @@ typedef enum
 typedef enum
 {
 	soundvol,
+	musicvol,
 	controls,
 	NUMMENUITEMS
 } menupos_t;
@@ -51,7 +53,7 @@ typedef struct
 	char 		name[20];
 } menuitem_t;
 
-menuitem_t menuitem[3];
+menuitem_t menuitem[NUMMENUITEMS];
  
 typedef struct
 {
@@ -59,7 +61,7 @@ typedef struct
 	int	maxval;
 } slider_t;
 
-slider_t slider[2];
+slider_t slider[NUMMENUITEMS];
 
 int		cursorframe, cursorcount;
 int		movecount;
@@ -143,18 +145,26 @@ void O_Init (void)
 	
 /*    strcpy(menuitem[0].name, "  Volume"); */
     D_strncpy(menuitem[0].name, "  Volume", 8); /* Fixed CEF */
-	menuitem[0].x = 95;
-	menuitem[0].y = 50;
-	menuitem[0].hasslider = true;
+	menuitem[soundvol].x = 95;
+	menuitem[soundvol].y = 40;
+	menuitem[soundvol].hasslider = true;
 
- 	slider[0].maxval = 16;
-	slider[0].curval = 16*sfxvolume/255;
+ 	slider[soundvol].maxval = 16;
+	slider[soundvol].curval = 16*sfxvolume/255;
+
+	D_strncpy(menuitem[musicvol].name, "   Music", 8);
+	menuitem[musicvol].x = 95;
+	menuitem[musicvol].y = 80;
+	menuitem[musicvol].hasslider = true;
+
+ 	slider[musicvol].maxval = 16;
+	slider[musicvol].curval = 16*musicvolume/255;
 
 /*    strcpy(menuitem[1].name, "Controls"); */
-    D_strncpy(menuitem[1].name, "Controls", 8); /* Fixed CEF */
-	menuitem[1].x = 95;
-	menuitem[1].y = 110;
-	menuitem[1].hasslider = false;
+    D_strncpy(menuitem[controls].name, "Controls", 8); /* Fixed CEF */
+	menuitem[controls].x = 95;
+	menuitem[controls].y = 120;
+	menuitem[controls].hasslider = false;
 
 }
 
@@ -212,11 +222,13 @@ void O_Control (player_t *player)
 					slider[cursorpos].curval++;
 					if (slider[cursorpos].curval > slider[cursorpos].maxval)
 						slider[cursorpos].curval = slider[cursorpos].maxval;
-					if (cursorpos == 0)
+					if (cursorpos == soundvol)
 					{
-						sfxvolume = 255*slider[0].curval / slider[0].maxval;
+						sfxvolume = 255*slider[soundvol].curval / slider[soundvol].maxval;
 						S_StartSound (NULL, sfx_pistol);
 					}
+					if (cursorpos == musicvol)
+						musicvolume = 255*slider[musicvol].curval / slider[musicvol].maxval;
 				}
 			}
 			if (buttons & JP_LEFT)
@@ -226,11 +238,13 @@ void O_Control (player_t *player)
 					slider[cursorpos].curval--;
 					if (slider[cursorpos].curval < 0)
 						slider[cursorpos].curval = 0;
-					if (cursorpos == 0)
+					if (cursorpos == soundvol)
 					{
-						sfxvolume = 255*slider[0].curval / slider[0].maxval;
+						sfxvolume = 255*slider[soundvol].curval / slider[soundvol].maxval;
 						S_StartSound (NULL, sfx_pistol);
 					}
+					if (cursorpos == musicvol)
+						musicvolume = 255*slider[musicvol].curval / slider[musicvol].maxval;
 				}
 			}
 
@@ -279,7 +293,7 @@ void O_Drawer (void)
 	int		offset;
 	
 /* Erase old and Draw new cursor frame */
-	EraseBlock(56, 40, o_cursor1->width, 200);
+	EraseBlock(56, 36, o_cursor1->width, 200);
 	if(cursorframe)
 		DrawJagobj(o_cursor1, 60, menuitem[cursorpos].y - 2);
 	else

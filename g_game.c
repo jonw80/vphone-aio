@@ -69,7 +69,11 @@ void G_DoLoadLevel (void)
 	displayplayer = consoleplayer;		/* view the guy you are playing     */
 	gameaction = ga_nothing; 
 
-    /* S_StartSong(1, 0); */  /* Added CEF */
+/* */
+/* in-game music: the cartridge has ten songs (mus_e1m1..mus_e3m2); cycle */
+/* them by map.  mixmusic.gas lets them play alongside the sound effects. */
+/* */
+	S_StartSong (((gamemap-1)%10)+1, 1);
 
 	Z_CheckHeap (mainzone);  		/* DEBUG */
 } 
