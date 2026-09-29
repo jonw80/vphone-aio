@@ -111,19 +111,16 @@ L72:
  neg r1
 	moveta	r1,alt_baseyscale
 
+; wait for blitter idle.  The status register sits on the GPU local bus,
+; so this poll costs no main-bus cycles.  (The compiled original also stored
+; every sample to _junk in DRAM; GPU-normal outranks Blitter-normal on the
+; bus, so each of those stores stalled the very blit it was waiting on.)
+	movei	#$f02238,r1
 L53:
- movei #_junk,r0
- movei #15737400,r1
- load (r1),r1
- store r1,(r0)
- move r1,r0
- moveq #1,r1
- and r1,r0
- moveq #0,r1
- cmp r0,r1
- movei #L53,scratch
- jump EQ,(scratch)
- nop
+	load	(r1),r0
+	btst	#0,r0
+	jr		EQ,L53
+	nop
 
  movei #15737348,r0
  movei #208928,r1
@@ -159,19 +156,13 @@ L56:
 
 L61:
 
+; wait for blitter idle (local-bus poll, see above)
+	movei	#$f02238,r1
 L63:
- movei #_junk,r0
- movei #15737400,r1
- load (r1),r1
- store r1,(r0)
- move r1,r0
- moveq #1,r1
- and r1,r0
- moveq #0,r1
- cmp r0,r1
- movei #L63,scratch
- jump EQ,(scratch)
- nop
+	load	(r1),r0
+	btst	#0,r0
+	jr		EQ,L63
+	nop
 
 	load (r15+1),r1	; (pl)
 	movei #$f02200,r0		; plane source
@@ -292,7 +283,6 @@ L52:
  .extern _viewx
  .extern _gpucodestart
  .extern _samplecount
- .extern _junk
  .extern _finecosine
  .extern _finesine
  .extern _ref8_start

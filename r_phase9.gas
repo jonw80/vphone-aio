@@ -557,24 +557,32 @@ L55:
  addq #7,r0
  store r0,(r1)
 
-L56:
-
- movei #_junk,r0
- movei #_ticcount,r1
- load (r1),r1
- store r1,(r0)
-
-L57:
-
- movei #_junk,r0
- load (r0),r0
+;
+; while (ticcount - lastticcount < 2) ;
+;
+; The 68000 is running the next game tic while we sit here, and the GPU
+; outranks it on the bus.  Poll DRAM only every BUSIDLE local-RAM loops so
+; the 68000 (and the last sprite blit) get the bus back.
+;
+BUSIDLE	.equ	64
  movei #_lastticcount,r1
- load (r1),r1
- sub r1,r0
+ load (r1),r2				; lastticcount (only written below)
+ movei #_ticcount,r3
+ movei #L56,r4
+ jr T,L57
+ nop
+L56:
+ movei #BUSIDLE,r1
+L56delay:
+ subq #1,r1
+ jr NE,L56delay
+ nop
+L57:
+ load (r3),r0
+ sub r2,r0
  moveq #2,r1
  cmp r0,r1
- movei #L56,scratch
- jump S_LT,(scratch)
+ jump S_LT,(r4)
  nop
 
  movei #_isrvmode,r0
@@ -583,22 +591,24 @@ L57:
  movei #_readylist_p,r0
  store r15,(r0) ;(worklist_p)
 
+;
+; while (displaylist_p != readylist_p) ;   (the vbl isr takes the new list)
+; readylist_p == worklist_p, which we still hold in r15
+;
+ movei #_displaylist_p,r3
+ movei #L59,r4
+ jr T,L60
+ nop
 L59:
-
- movei #_junk,r0
- movei #_displaylist_p,r1
- load (r1),r1
- store r1,(r0)
-
+ movei #BUSIDLE,r1
+L59delay:
+ subq #1,r1
+ jr NE,L59delay
+ nop
 L60:
-
- movei #_junk,r0
- load (r0),r0
- movei #_readylist_p,r1
- load (r1),r1
- cmp r0,r1
- movei #L59,scratch
- jump NE,(scratch)
+ load (r3),r0
+ cmp r0,r15 ;(worklist_p)
+ jump NE,(r4)
  nop
 
  movei #_lasttics,r0
@@ -659,7 +669,6 @@ L51:
  .extern _workpage
  .extern _BASEORGY
  .extern _ticcount
- .extern _junk
  .extern _workingscreen
 
 	.phrase
