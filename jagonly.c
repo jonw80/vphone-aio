@@ -55,7 +55,7 @@ int		*worklist_p, *work_p;		/* list currently being built */
 
 int             joypad[32]; 
 int             joystick1; 
-int             ticcount; 
+volatile int    ticcount; 
  
 unsigned	branch1, branch2;
  
@@ -1067,7 +1067,8 @@ void DoubleBufferSetup (void)
 	while (!I_RefreshCompleted () )
 	;
 	
-	bufferpage = (byte *)workingscreen = screens[workpage];
+	workingscreen = screens[workpage];
+	bufferpage = (byte *)workingscreen;
 	displaypage = (byte *)screens[!workpage];
 
 	D_memset (bufferpage,0,320*200);

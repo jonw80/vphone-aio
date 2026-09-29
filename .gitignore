@@ -1,0 +1,5 @@
+build/
+tools/bin/
+*.o
+!init.o
+*.abs
