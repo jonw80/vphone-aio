@@ -5,6 +5,8 @@ _ref6_start::
 	.org $f03100
 DIVCONTROL		.equ	$f0211c
 
+	.include	"colblit.inc"
+
 S_LE	.ccdef  $14     ; PL
 U_LE	.ccdef  $04     ; CC
 S_GT    .ccdef	$18   	; MI
@@ -111,11 +113,11 @@ clearclipbounds:
 ;
 
  movei #15737348,r0
- movei #145440,r1
+ movei #COL_A1FLAGS,r1
  store r1,(r0)
 
  movei #15737384,r0
- movei #145952,r1
+ movei #COL_A2FLAGS,r1
  store r1,(r0)
 
  movei #_viswalls,r0
@@ -593,8 +595,12 @@ fracpos:
 	move	dt_bottom,dtb_count
 	sub		dt_top,dtb_count
 	addq	#1,dtb_count
-	shlq	#16,dtb_count
+	.if FASTCOLUMNS
+	bset	#16,dtb_count			; outer 1, inner = pixels
+	.else
+	shlq	#16,dtb_count			; outer = pixels, inner 1
 	addq	#1,dtb_count
+	.endif
 	
 ; a2pix
 	shlq	#16,dt_top
@@ -622,7 +628,7 @@ fracpos:
 	load	(dt_tex),dtb_base		; dt->data
 			
 ; command
-	movei	#1+(1<<8)+(1<<9)+(1<<10)+(1<<11)+(1<<13)+(1<<30)+(12<<21),dtb_command
+	movei	#COL_CMD,dtb_command
 	
 	movei	#$f02200,dt_blitter
 	movei	#$f02270,dt_scratch2		; iinc blitter register
@@ -636,8 +642,8 @@ dt_wait:
 	store	dtb_base,(dt_blitter)
 	store	dtb_a1pix,(dt_blitter+3)
 	store	dtb_a1frac,(dt_blitter+6)
-	store	dtb_a1inc,(dt_blitter+4)
-	store	dtb_a1incfrac,(dt_blitter+5)
+	store	dtb_a1inc,(dt_blitter+COL_A1STEP)		; 16.16 texture step
+	store	dtb_a1incfrac,(dt_blitter+COL_A1FSTEP)
 	store	dt_top,(dt_blitter+12)
 	store	dt_texturelight,(dt_scratch2)
 	store	dtb_count,(dt_blitter+15)
@@ -1159,8 +1165,12 @@ L194:
  sub sl_top,r1 ;(top)
  moveq #1,r2
  add r2,r1
+	.if FASTCOLUMNS
+ bset #16,r1			; outer 1, inner = pixels
+	.else
  shlq #16,r1
  add r2,r1
+	.endif
  store r1,(r0)
 
 L196:
@@ -1196,11 +1206,11 @@ L197:
  move r2,r1
  store r1,(r0)
 
- movei #15737360,r0
+ movei #COL_A1STEP_REG,r0	; sky step 1.111 texels per pixel
  moveq #1,r1
  store r1,(r0)
 
- movei #15737364,r0
+ movei #COL_A1FSTEP_REG,r0
  movei #7281,r1
  store r1,(r0)
 
@@ -1219,7 +1229,7 @@ L197:
  store r1,(r0)
 
  movei #15737400,r0
- movei #1098919681,r1
+ movei #COL_CMD,r1
  store r1,(r0)
 	
 L190:

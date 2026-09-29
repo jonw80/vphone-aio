@@ -5,6 +5,8 @@ _ref8_start::
 	.org $f03100
 DIVCONTROL		.equ	$f0211c
 
+	.include	"colblit.inc"
+
 S_LE	.ccdef  $14     ; PL
 U_LE	.ccdef  $04     ; CC
 S_GT    .ccdef	$18   	; MI
@@ -145,14 +147,14 @@ blitwait1:
 	load	(r1),r1
 	movei	#$f02200,r0
 	store	r1,(r0)				; A1 base = screen
-	movei	#145952,r1
+	movei	#COL_A1SCREEN,r1
 	movei	#$f02204,r0
 	store	r1,(r0)				; A1 flags = screen window (160 wide, 16 bpp)
 	movei	#$10000,r1
-	movei	#$f02210,r0
+	movei	#COL_A1STEP_REG,r0
 	store	r1,(r0)				; A1 step: +1 row per pixel
 	moveq	#0,r1
-	movei	#$f02214,r0
+	movei	#COL_A1FSTEP_REG,r0
 	store	r1,(r0)				; no step fraction
 	movei	#FUZZDARK,r1
 	movei	#$f02270,r0
@@ -162,19 +164,19 @@ blitwait1:
 	nop
 
 dv_texturesource:
-	movei	#145440,r1
+	movei	#COL_A1FLAGS,r1
 	movei	#$f02204,r0
 	store	r1,(r0)				; A1 flags = patch data (a spectre may have changed them)
 	movei	#15737344,r0
 	load	(dv_vis+14),r1		; vis->pixels
 	store	r1,(r0)
 
-	movei	#15737360,r0
+	movei	#COL_A1STEP_REG,r0	; 16.16 texture step
 	move	dv_iscale,r1
 	sharq	#16,r1
 	store	r1,(r0)
 
-	movei	#15737364,r0
+	movei	#COL_A1FSTEP_REG,r0
 	move	dv_iscale,r1 ; local iscale
 	shlq	#16,r1
 	shrq	#16,r1		; mask off high bits
@@ -349,11 +351,15 @@ dv_fuzzok:
 	store	r0,(dv_blitter+6)		; a1 frac
 dv_notfuzz:
 
+	.if FASTCOLUMNS
+	bset	#16,dv_bottom				; outer 1, inner = pixels
+	.else
 	shlq	#16,dv_bottom
 	addq	#1,dv_bottom
+	.endif
 	store	dv_bottom,(dv_blitter+15)		; count
 
-	movei	#1098919681,r1
+	movei	#COL_CMD,r1
 	store	r1,(dv_blitter+14)
 
 
@@ -462,11 +468,11 @@ _R_Sprites::
  sub scratch,FP
 
  movei #15737348,r0
- movei #145440,r1
+ movei #COL_A1FLAGS,r1
  store r1,(r0)
 
  movei #15737384,r0
- movei #145952,r1
+ movei #COL_A2FLAGS,r1
  store r1,(r0)
 
  movei #_lastsprite_p,r0
@@ -693,6 +699,26 @@ L65:
  movei #L64,scratch
  jump U_LT,(scratch)
  nop
+
+	.if FASTCOLUMNS
+;
+; leave the address flags exactly as the shipped code did: later 68000
+; blits (status bar, automap, menus) set A1 but not always A2, and none of
+; them expect a Y add bit to be lying around (TRM bug #11)
+;
+	movei	#$f02238,r0
+spr_idle:
+	load	(r0),r1
+	btst	#0,r1
+	jr		EQ,spr_idle
+	nop
+	movei	#FLAGS_16BPP+FLAGS_W128+FLAGS_XZERO,r1
+	movei	#$f02204,r0
+	store	r1,(r0)
+	movei	#FLAGS_16BPP+FLAGS_W160+FLAGS_XZERO,r1
+	movei	#$f02228,r0
+	store	r1,(r0)
+	.endif
 
  movei #_phasetime+32,r0
  movei #_samplecount,r1
