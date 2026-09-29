@@ -292,7 +292,7 @@ void S_StartSong(int music_id, int looping)
 
 	int lump;
 
-	if (music_memory)
+	if (music || music_memory)
 		S_StopSong ();		/* level music is replaced by the intermission's */
 	S_WaitDSP ();
 
@@ -300,8 +300,20 @@ void S_StartSong(int music_id, int looping)
 	musictime = 0;
 	samples_per_midiclock = 0;
 	lump = W_GetNumForName(S_music[music_id].name);
-	music_memory = music = 
-		(unsigned char *) W_CacheLumpNum(lump, PU_STATIC);
+/* */
+/* A song now plays during levels, where zone memory belongs to the level */
+/* and the texture cache.  An uncompressed song is played straight out of */
+/* the cartridge, the way the instruments always were; only a compressed */
+/* one has to be unpacked into RAM. */
+/* */
+	if (lumpinfo[lump].name[0] & 0x80)
+		music_memory = music = 
+			(unsigned char *) W_CacheLumpNum(lump, PU_STATIC);
+	else
+	{
+		music_memory = 0;
+		music = (unsigned char *) W_POINTLUMPNUM(lump);
+	}
 	music_start = looping ? music : 0;
 	music_end = (unsigned char *) music + lumpinfo[lump].size ;
 
@@ -314,9 +326,10 @@ void S_StopSong(void)
 	int *ptr;
 
 	S_WaitDSP ();
-	if (!music_memory)
+	if (!music && !music_memory)
 		return;
-	Z_Free (music_memory);
+	if (music_memory)
+		Z_Free (music_memory);
 	music_memory = 0;
 	music = 0;							/* prevent the DSP from running */
 
