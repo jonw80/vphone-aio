@@ -3,3 +3,4 @@ tools/bin/
 *.o
 !init.o
 *.abs
+__pycache__/
