@@ -6,11 +6,9 @@
 /* proper screen size would be 160*100, stretched to 224 is 2.2 scale */
 #define	STRETCH				(22*FRACUNIT/10)
 
-#define	CENTERX				(SCREENWIDTH/2)
+/* the horizontal projection is centerxfrac (r_detail.c) */
 #define	CENTERY				(SCREENHEIGHT/2)
-#define	CENTERXFRAC			(SCREENWIDTH/2*FRACUNIT)
 #define	CENTERYFRAC			(SCREENHEIGHT/2*FRACUNIT)
-#define	PROJECTION			CENTERXFRAC
 
 #define	PSPRITEXSCALE		FRACUNIT	
 #define	PSPRITEYSCALE		FRACUNIT
@@ -221,7 +219,7 @@ void	R_InitSpriteDefs (char **namelist);
 extern	int	tantoangle[SLOPERANGE+1];
 
 extern	unsigned short	yslope[SCREENHEIGHT];		/* 6.10 frac */
-extern	unsigned short	distscale[SCREENWIDTH];		/* 1.15 frac */
+extern	unsigned short	distscale[MAXSCREENWIDTH];	/* 1.15 frac */
 
 #define	HEIGHTBITS			6
 #define	SCALEBITS			9
@@ -247,7 +245,12 @@ extern	int			viewangletox[FINEANGLES/2];
 
 /* The xtoviewangleangle[] table maps a screen pixel to the lowest viewangle */
 /* that maps back to x ranges from clipangle to -clipangle */
-extern	angle_t		xtoviewangle[SCREENWIDTH+1];
+extern	angle_t		xtoviewangle[MAXSCREENWIDTH+1];
+
+/* r_detail.c */
+extern	fixed_t		centerxfrac, stretchx;
+extern	int			col_a1screen, col_a2flags, plane_a2flags;
+extern	int			*clipbounds_p, *spropening_p;
 
 extern	fixed_t		finetangent[FINEANGLES/2];
 
@@ -370,7 +373,7 @@ typedef struct vissprite_s
 #define	MAXVISSPRITES	128
 extern	vissprite_t	vissprites[MAXVISSPRITES], *lastsprite_p, *vissprite_p;
 
-#define	MAXOPENINGS		SCREENWIDTH*64
+#define	MAXOPENINGS		MAXSCREENWIDTH*64
 extern	unsigned short	openings[MAXOPENINGS], *lastopening;
 
 #define	MAXVISSSEC		256
@@ -384,7 +387,7 @@ typedef struct
 	int			lightlevel;
 	int			minx, maxx;
 	int			pad1;						/* leave pads for [minx-1]/[maxx+1] */
-	unsigned short	open[SCREENWIDTH];		/* top<<8 | bottom */
+	unsigned short	open[MAXSCREENWIDTH];	/* top<<8 | bottom */
 	int			pad2;
 } visplane_t;
 

@@ -36,8 +36,15 @@ BLIT_GOURZ		.equ	1<<13		; needed for SRCSHADE (TRM bug #9)
 BLIT_LFU_S		.equ	12<<21		; write source data
 BLIT_SRCSHADE	.equ	1<<30
 
+; sizeof(visplane_t) in r_local.h: 6 longs, open[MAXSCREENWIDTH] shorts, a
+; long of padding.  The planes are laid out for the widest view whatever the
+; detail setting, so the stride is a constant.
+VISPLANE_SIZE	.equ	1308		; 24 + 640*2 + 4
+
 ; flags: 16 bpp, texture window 128 wide (only X is used, as a linear
-; offset), screen window 160 wide
+; offset), screen window 160 wide.  The screen window follows the detail
+; setting at run time (r_detail.c makes _col_a2flags and _col_a1screen),
+; so FLAGS_W160 and the COL_ flags that use it are only the 160 values.
 FLAGS_16BPP		.equ	4<<3
 FLAGS_W128		.equ	$1c<<9
 FLAGS_W160		.equ	$1d<<9

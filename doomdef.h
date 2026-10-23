@@ -608,6 +608,18 @@ extern	gametype_t	starttype;
 #define	SCREENHEIGHT	144
 #endif
 
+/* the number of columns the view is drawn with follows the detail setting */
+/* (r_detail.c); SCREENWIDTH is the original 160 */
+#define	MAXSCREENWIDTH	640
+enum {detail_low, detail_high, detail_ultra, NUMDETAILS};
+
+extern	int		detailmode;			/* the one in use, set by R_SetDetail */
+extern	int		detailsetting;		/* the one chosen in the options */
+extern	int		screenwidth, centerx, screenwid, viewshift;
+extern	int		viewvmode, viewpwidth, viewxpos, sbarscaled;
+
+void R_SetDetail (int mode);
+
 void I_Init (void);
 byte *I_WadBase (void);
 byte *I_ZoneBase (int *size);

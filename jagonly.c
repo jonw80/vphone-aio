@@ -9,11 +9,11 @@ JAGUAR MEMORY MAP
 
 0x  4000		text/data/bss
 0x 80000		start heap
-0x1c8000		sbarback (0x3210)
-0x1cb210		sbarfront (0x3200)
-0x1ce410		debugscreen (0x1bf0)
-0x1d0000		screens[0]
-0x1e0000		screens[1]
+0x177800		sbarback (0x3210)
+0x17aa10		sbarfront (0x3200)
+0x17dc10		debugscreen (0x1bf0)
+0x17f800		screens[0] (MAXSCREENWIDTH*SCREENHEIGHT*2 = 0x38400)
+0x1b7c00		screens[1]
 0x1f0000		soundbuffer
 0x1f4000		stack (8 bytes of screenshade)
 0x200000		end of ram
@@ -41,6 +41,8 @@ int			workpage;	/* which frame is not being displayed */
 int			worklist;	/* which listbuffer is not being used */
 
 int	isrvmode = 0xC1+(7<<9);		/* vmode value set by ISR each screen */
+boolean	frontendlist;			/* the 320 wide 8 bit page is up, not the view */
+								/* (a 320 column view uses the same vmode) */
 
 extern	int		listbuffer[256];
 extern	int		listbuffer1[256];
@@ -115,11 +117,11 @@ void Jag68k_main (void)
 
 /* init vars  */
 
-	sbar = (jagobj_t *)0x1c8000;
-	sbartop = (byte *)0x1cb210;
-	debugscreen = (byte *)0x1ce410;
-	framebuffer = screens[0] = (pixel_t *)0x1d0000; 
-	screens[1] = (pixel_t *)0x1e0000; 
+	sbar = (jagobj_t *)0x177800;
+	sbartop = (byte *)0x17aa10;
+	debugscreen = (byte *)0x17dc10;
+	framebuffer = screens[0] = (pixel_t *)0x17f800; 
+	screens[1] = (pixel_t *)0x1b7c00; 
 	screenshade = (int *)0x1f4000;
 
 #if 0
@@ -186,6 +188,8 @@ soundbuffer[5] = 0xeeee;
 	for (i=1 ; i<256 ; i++)
 		((pixel_t *)0xf00400)[i] = (pixel_t)0xffff;
 		
+	R_SetDetail (detail_low);	/* the view's size, for the display list; */
+								/* R_Init applies the saved setting */
 	I_Update ();
 	
 /* */
@@ -409,7 +413,7 @@ byte *I_WadBase (void)
 */ 
  
 #define	STARTHEAP	0x80000
-#define	ENDHEAP		0x1c8000
+#define	ENDHEAP		0x177800
 
 byte *I_ZoneBase (int *size)
 {
@@ -752,6 +756,55 @@ void I_DrawSpan (int ds_y, int ds_x1, int ds_x2, int light, fixed_t ds_xfrac, fi
 */ 
 
 #define	GPULINE		(BASEORGY+SCREENHEIGHT+1)
+
+/* the object list (r_phase9.gas builds the same one): */
+/*   0-47 branches and the gpu object, 48 view, 64 colour add, */
+/*   96 status bar background, 128 status bar foreground, 160 debug screen */
+/* The status bar objects get three phrases on 32 byte boundaries so they */
+/* can be scaled ones (TRM p.19); init.s aligns the list buffers. */
+#define	SBAROBJ		(96/4)			/* index in the list, in longs */
+#define	DEBUGOBJ	(160/4)
+
+/* */
+/* a 320x40 8 bit status bar object: unscaled, or scaled to 640 */
+/* */
+static void SbarObject (int *obj, void *data, unsigned link, int transparent)
+{
+	unsigned	pwidth = 320/8;
+
+	obj[0] =
+		((int)data<<8)						/* data pointer */
+		+ (link>>8);						/* link */
+
+	obj[1] =
+		(link<<24)							/* link */
+		+ (sbar->height<<14)				/* height */
+		+ ((BASEORGY+SCREENHEIGHT+1)<<4)	/* ypos */
+		+ sbarscaled;						/* bitmap type: 1 = scaled */
+
+	obj[2] =
+		(0<<(49-32))						/* firstpix */
+		+ (0<<(48-32))						/* release */
+		+ (transparent<<(47-32))			/* transparent */
+		+ (0<<(46-32))						/* add to buffer */
+		+ (0<<(45-32))						/* reflect */
+		+ (0<<(38-32))						/* color index */
+		+ ((pwidth)>>4);					/* iwidth */
+
+	obj[3] =
+		((pwidth)<<28)						/* iwidth */
+		+ ((pwidth)<<18)					/* dwidth */
+		+ (1<<15)							/* pitch */
+		+ (3<<12)							/* depth */
+		+ (BASEORGX*2<<sbarscaled);			/* xpos */
+
+	obj[4] = 0;
+	obj[5] =								/* used when scaled: */
+		(0<<16)								/* remainder: next line is the next source line */
+		+ (0x20<<8)							/* vscale 1.0 */
+		+ 0x40;								/* hscale 2.0 (3.5 bits) */
+}
+
 int		lastticcount;
 int		lasttics;
 
@@ -837,8 +890,8 @@ void I_Update (void)
 	if (shadepixel)
 		link = (int)( (byte *)&worklist_p[16] - delta)>>3;
 	else
-		link = (int)( (byte *)&worklist_p[20] - delta)>>3;
-	pwidth = SCREENWIDTH/4;
+		link = (int)( (byte *)&worklist_p[SBAROBJ] - delta)>>3;
+	pwidth = viewpwidth;
 
 	worklist_p[12] = 
 		((int)workingscreen<<8)			/* data pointer */
@@ -864,14 +917,14 @@ void I_Update (void)
 			+ ((pwidth)<<18)					/* dwidth */
 			+ (1<<15)							/* pitch */
 			+ (4<<12)							/* depth */
-			+ BASEORGX;							/* xpos */
+			+ viewxpos;							/* xpos */
 
 		worklist_p[15] = temp;
 
 /* */
 /* color add object */
 /* */
-	link = (int)( (byte *)&worklist_p[20] - delta)>>3;
+	link = (int)( (byte *)&worklist_p[SBAROBJ] - delta)>>3;
 
 	worklist_p[16] = 
 		((int)screenshade<<8)				/* data pointer */
@@ -890,82 +943,28 @@ void I_Update (void)
 		+ (1<<(46-32))						/* add to buffer */
 		+ (0<<(45-32))						/* reflect */
 		+ (0<<(38-32))						/* color index */
-		+ (40>>4);							/* iwidth */
+		+ (viewpwidth>>4);					/* iwidth */
 
 	worklist_p[19] =
-		(40<<28)							/* iwidth */
+		(viewpwidth<<28)					/* iwidth */
 		+ (0<<18)							/* dwidth */
 		+ (0<<15)							/* pitch */
 		+ (4<<12)							/* depth */
-		+ BASEORGX;							/* xpos */
+		+ viewxpos;							/* xpos */
 	
 /* */
-/* status bar background */
+/* status bar background and foreground: 320 wide, or with the view 640 */
+/* wide, scaled objects that write each pixel twice (sbarscaled) */
 /* */
-	link = (int)( (byte *)&worklist_p[24] - delta)>>3;
-	pwidth = 320/8;
-
-	worklist_p[20] = 
-		((int)sbar->data<<8)				/* data pointer */
-		+ (link>>8);						/* link */
-		
-	worklist_p[21] =
-		(link<<24)							/* link */
-		+ (sbar->height<<14)				/* height */
-		+ ((BASEORGY+SCREENHEIGHT+1)<<4)	/* ypos */
-		+ 0;								/* bitmap type */
-		
-	worklist_p[22] =
-		(0<<(49-32))						/* firstpix */
-		+ (0<<(48-32))						/* release */
-		+ (0<<(47-32))						/* transparent */
-		+ (0<<(46-32))						/* add to buffer */
-		+ (0<<(45-32))						/* reflect */
-		+ (0<<(38-32))						/* color index */
-		+ ((pwidth)>>4);					/* iwidth */
-
-	worklist_p[23] =
-		((pwidth)<<28)						/* iwidth */
-		+ ((pwidth)<<18)					/* dwidth */
-		+ (1<<15)							/* pitch */
-		+ (3<<12)							/* depth */
-		+ BASEORGX*2;						/* xpos */
-
-/* */
-/* status bar foreground */
-/* */
+	link = (int)( (byte *)&worklist_p[SBAROBJ+8] - delta)>>3;
+	SbarObject (&worklist_p[SBAROBJ], sbar->data, link, 0);
 
 /* skip debug screen if not active */
 	if (debugscreenactive)
-		link = (int)( (byte *)&worklist_p[28] - delta)>>3;
+		link = (int)( (byte *)&worklist_p[DEBUGOBJ] - delta)>>3;
 	else
 		link = (int)stopobj>>3;
-
-	worklist_p[24] = 
-		((int)sbartop<<8)					/* data pointer */
-		+ (link>>8);						/* link */
-		
-	worklist_p[25] =
-		(link<<24)							/* link */
-		+ (sbar->height<<14)				/* height */
-		+ ((BASEORGY+SCREENHEIGHT+1)<<4)	/* ypos */
-		+ 0;								/* bitmap type */
-		
-	worklist_p[26] =
-		(0<<(49-32))						/* firstpix */
-		+ (0<<(48-32))						/* release */
-		+ (1<<(47-32))						/* transparent */
-		+ (0<<(46-32))						/* add to buffer */
-		+ (0<<(45-32))						/* reflect */
-		+ (0<<(38-32))						/* color index */
-		+ ((pwidth)>>4);					/* iwidth */
-
-	worklist_p[27] =
-		((pwidth)<<28)						/* iwidth */
-		+ ((pwidth)<<18)					/* dwidth */
-		+ (1<<15)							/* pitch */
-		+ (3<<12)							/* depth */
-		+ BASEORGX*2;						/* xpos */
+	SbarObject (&worklist_p[SBAROBJ+8], sbartop, link, 1);
 
 /* */
 /* debug screen object */
@@ -974,17 +973,17 @@ void I_Update (void)
 	link = (int)stopobj>>3;
 	pwidth = 256/64;
 
-	worklist_p[28] = 
+	worklist_p[DEBUGOBJ] = 
 		((int)debugscreen<<8)				/* data pointer */
 		+ (link>>8);						/* link */
 		
-	worklist_p[29] =
+	worklist_p[DEBUGOBJ+1] =
 		(link<<24)							/* link */
 		+ (216<<14)							/* height */
 		+ ((BASEORGY)<<4)					/* ypos */
 		+ 0;								/* bitmap type */
 		
-	worklist_p[30] =
+	worklist_p[DEBUGOBJ+2] =
 		(0<<(49-32))						/* firstpix */
 		+ (0<<(48-32))						/* release */
 		+ (1<<(47-32))						/* transparent */
@@ -993,7 +992,7 @@ void I_Update (void)
 		+ (0x70<<(38-32))					/* color index */
 		+ (pwidth>>4);						/* iwidth */
 
-	worklist_p[31] =
+	worklist_p[DEBUGOBJ+3] =
 		(pwidth<<28)						/* iwidth */
 		+ (pwidth<<18)						/* dwidth */
 		+ (1<<15)							/* pitch */
@@ -1012,7 +1011,8 @@ void I_Update (void)
 /* */
 /* start using the list */
 /* */
-	isrvmode = 0xc1 + (7<<9);		/* 160 * 224, 16 bit color */
+	isrvmode = viewvmode;			/* screenwidth * 224, 16 bit color */
+	frontendlist = false;
 	readylist_p = worklist_p;
 	do
 	{
@@ -1402,6 +1402,7 @@ void DoubleBufferObjList (void)
 /* start using the list */
 /* */
 	isrvmode = 0xc1 + (3<<9);		/* 320 * 224, 16 bit color */
+	frontendlist = true;
 	readylist_p = worklist_p;
 	while (displaylist_p != readylist_p)
 	;
@@ -1436,6 +1437,7 @@ void ClearEEProm (void)
 	sfxvolume = 200;
 	musicvolume = 128;
 	controltype = 0;
+	detailsetting = detail_low;
 	maxlevel = 1;
 
 	WriteEEProm ();	
@@ -1484,8 +1486,11 @@ void ReadEEProm (void)
 	musicvolume = eeprombuffer[4];
 	if (musicvolume > 255)
 		ClearEEProm ();
-	controltype = eeprombuffer[5];
+	controltype = eeprombuffer[5] & 0xff;
 	if (controltype > 5)
+		ClearEEProm ();
+	detailsetting = eeprombuffer[5] >> 8;	/* zero in eeproms saved before it */
+	if (detailsetting >= NUMDETAILS)
 		ClearEEProm ();
 	maxlevel = eeprombuffer[6];
 	if (maxlevel > 25)
@@ -1502,7 +1507,7 @@ void WriteEEProm (void)
 	eeprombuffer[2] = startmap;
 	eeprombuffer[3] = sfxvolume;
 	eeprombuffer[4] = musicvolume;
-	eeprombuffer[5] = controltype;
+	eeprombuffer[5] = controltype + (detailsetting<<8);
 	eeprombuffer[6] = maxlevel;
 
 	eeprombuffer[EEWORDS-1] = 12345;

@@ -33,6 +33,22 @@ static bool env(unsigned cmd, void *data) {
       { "_retropad_y", "btn_c" }, { "_retropad_select", "pause" }, { "_retropad_start", "option" },
       { "_retropad_x", "num_0" } };
     struct retro_variable *v = data;
+    /* other core options from the environment: VJ_OPTS="dram_timing=enabled,..." */
+    static char opts[1024];
+    const char *e = getenv("VJ_OPTS");
+    if (v && v->key && e && !strncmp(v->key, "virtualjaguar_", 14)) {
+      size_t n = strlen(v->key + 14);
+      for (const char *p = e; *p; ) {
+        const char *q = strchr(p, ','), *end = q ? q : p + strlen(p);
+        if ((size_t)(end - p) > n && !strncmp(p, v->key + 14, n) && p[n] == '=') {
+          size_t len = end - p - n - 1;
+          if (len >= sizeof opts) len = sizeof opts - 1;
+          memcpy(opts, p + n + 1, len); opts[len] = 0;
+          v->value = opts; return true;
+        }
+        p = q ? q + 1 : end;
+      }
+    }
     if (!v || !v->key || strncmp(v->key, "virtualjaguar_p1", 16)) return false;
     for (unsigned i = 0; i < sizeof map / sizeof map[0]; i++)
       if (!strcmp(v->key + 16, map[i][0])) { v->value = map[i][1]; return true; }
@@ -83,6 +99,8 @@ static void dump(const char *path) {
      peek ADDR LEN  reply LEN bytes of Jaguar RAM in hex
      poke ADDR HEX  write bytes into Jaguar RAM, reply "ok"
      shot PATH      save the last frame as a PPM, reply "ok"
+     hash Y0 Y1     reply "W H HASH": the last frame's size and an FNV-1a
+                    hash of its rows Y0..Y1-1 (compare frames cheaply)
      wav PATH       start (or with "-", stop) writing audio to a WAV file
      quit                                                                  */
 static void wav_close(void) {
@@ -141,6 +159,13 @@ int main(int argc, char **argv) {
         puts("ok");
       } else if (!strcmp(cmd, "shot") && sscanf(line, "%*s %2047s", arg) == 1) {
         dump(arg); puts("ok");
+      } else if (!strcmp(cmd, "hash") && sscanf(line, "%*s %ld %ld", &a, &b) == 2) {
+        unsigned long long h = 0xcbf29ce484222325ull;
+        unsigned bpp = fmt == RETRO_PIXEL_FORMAT_XRGB8888 ? 4 : 2;
+        for (long y = a; y < b && y < (long)fh; y++)
+          for (unsigned i = 0; i < fw * bpp; i++)
+            h = (h ^ frame[y * fpitch + i]) * 0x100000001b3ull;
+        printf("%u %u %016llx\n", fw, fh, h);
       } else if (!strcmp(cmd, "wav") && sscanf(line, "%*s %2047s", arg) == 1) {
         if (!strcmp(arg, "-")) wav_close(); else wav_open(arg, 48000);
         puts("ok");

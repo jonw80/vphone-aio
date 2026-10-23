@@ -47,10 +47,10 @@ reset:
 
 
 .bss
-.dphrase
-_listbuffer:	ds.l  40
-_listbuffer1:	ds.l  40
-_listbuffer2:	ds.l  40
+.qphrase				;/* scaled objects sit on 32 byte boundaries */
+_listbuffer:	ds.l  48
+_listbuffer1:	ds.l  48
+_listbuffer2:	ds.l  48
 _stopobj:	ds.l  2
 
 .globl _listbuffer,_listbuffer1,_listbuffer2,_stopobj
@@ -187,6 +187,19 @@ reread:
 	move.l   a0,_displaylist_p       ;/* let the program know this is being used */
 	move.l   #_listbuffer,a1         ;/* copy to here */
 	
+	;/* 44 longs: through the debug screen object at 160 */
+	move.l   (a0)+,(a1)+
+	move.l   (a0)+,(a1)+
+	move.l   (a0)+,(a1)+
+	move.l   (a0)+,(a1)+
+	move.l   (a0)+,(a1)+
+	move.l   (a0)+,(a1)+
+	move.l   (a0)+,(a1)+
+	move.l   (a0)+,(a1)+
+	move.l   (a0)+,(a1)+
+	move.l   (a0)+,(a1)+
+	move.l   (a0)+,(a1)+
+	move.l   (a0)+,(a1)+
 	move.l   (a0)+,(a1)+
 	move.l   (a0)+,(a1)+
 	move.l   (a0)+,(a1)+

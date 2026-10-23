@@ -240,7 +240,7 @@ _R_Update::
 
 L52:
 
- movei #80,r0
+ movei #96,r0
  move r15,r1 ;(worklist_p)
  add r0,r1
  move r1,r0
@@ -250,7 +250,8 @@ L52:
 
 L53:
 
- movei #40,r0
+ movei #_viewpwidth,r0
+ load (r0),r0
  move r0,r17 ;(pwidth)
  movei #48,r0
  move r15,r1 ;(worklist_p)
@@ -293,7 +294,9 @@ L53:
  add r2,r1
  movei #16384,r2
  add r2,r1
- addq #7,r1
+ movei #_viewxpos,r2
+ load (r2),r2
+ add r2,r1
  store r1,(r0)
  movei #60,r1
  move r15,r2 ;(worklist_p)
@@ -301,7 +304,7 @@ L53:
  load (r0),r0
  store r0,(r2)
 
- movei #80,r0
+ movei #96,r0
  move r15,r1 ;(worklist_p)
  add r0,r1
  move r1,r0
@@ -335,183 +338,129 @@ L53:
  movei #72,r0
  move r15,r1 ;(worklist_p)
  add r0,r1
- movei #16386,r0
+ move r17,r0 ;(pwidth)
+ shrq #4,r0
+ movei #16384,r2
+ add r2,r0
  store r0,(r1)
 
  movei #76,r0
  move r15,r1 ;(worklist_p)
  add r0,r1
- movei #40,r0
+ move r17,r0 ;(pwidth)
  shlq #28,r0
- moveq #0,r2
- add r2,r0
- add r2,r0
  movei #16384,r2
  add r2,r0
- addq #7,r0
+ movei #_viewxpos,r2
+ load (r2),r2
+ add r2,r0
  store r0,(r1)
 
- movei #96,r0
- move r15,r1 ;(worklist_p)
- add r0,r1
- move r1,r0
+;
+; status bar background (96) and foreground (128): three phrase objects on
+; 32 byte boundaries, so they can be scaled ones, which write each pixel
+; twice when the view is 640 wide (_sbarscaled).  Then the debug screen
+; (160).  jagonly.c's I_Update builds the same list.
+;
+SB_TOP	.equr	r5		; height, ypos, type
+SB_W3	.equr	r6		; iwidth, dwidth, pitch, depth, xpos
+SB_SBAR	.equr	r7		; sbar
+SB_OBJ	.equr	r8		; the object being written
+
+ movei #_sbar,SB_SBAR
+ load (SB_SBAR),SB_SBAR
+ move SB_SBAR,r0
+ addq #2,r0
+ loadw (r0),r0			; sbar->height
+ shlq #14,r0
+ movei #_BASEORGY,SB_TOP
+ load (SB_TOP),SB_TOP
+ movei #181,r1			; SCREENHEIGHT+1
+ add r1,SB_TOP
+ shlq #4,SB_TOP			; ypos
+ add r0,SB_TOP
+ movei #_sbarscaled,r0
+ load (r0),r0
+ add r0,SB_TOP			; bitmap type: 1 = scaled
+ movei #$80A0B000,SB_W3	; iwidth 40, dwidth 40, pitch 1, 8 bpp, xpos 0
+
+; background: links to the foreground
+ movei #128,r0
+ add r15,r0 ;(worklist_p)
  sub r18,r0 ;(delta)
  sharq #3,r0
  move r0,r16 ;(link)
- movei #40,r0
- move r0,r17 ;(pwidth)
- movei #80,r0
- move r15,r1 ;(worklist_p)
- add r0,r1
- movei #_sbar,r0
- load (r0),r0
- addq #16,r0
+ movei #96,SB_OBJ
+ add r15,SB_OBJ
+ move SB_SBAR,r0
+ addq #16,r0			; sbar->data
  shlq #8,r0
- move r16,r2 ;(link)
- shrq #8,r2
- add r2,r0
- store r0,(r1)
+ move r16,r1
+ shrq #8,r1
+ add r1,r0
+ store r0,(SB_OBJ)
+ addq #4,SB_OBJ
+ move r16,r0
+ shlq #24,r0
+ add SB_TOP,r0
+ store r0,(SB_OBJ)
+ addq #4,SB_OBJ
+ moveq #2,r0			; iwidth 40>>4
+ store r0,(SB_OBJ)
+ addq #4,SB_OBJ
+ store SB_W3,(SB_OBJ)
+ addq #4,SB_OBJ
+ moveq #0,r0
+ store r0,(SB_OBJ)
+ addq #4,SB_OBJ
+ movei #$2040,r0		; remainder 0, vscale 1.0, hscale 2.0 (if scaled)
+ store r0,(SB_OBJ)
 
- move FP,r0
- addq #12,r0 ; &temp
- movei #_BASEORGY,r1
- load (r1),r1
- movei #180,r2
- add r2,r1
- addq #1,r1
- store r1,(r0)
- movei #84,r1
- move r15,r2 ;(worklist_p)
- add r1,r2
- move r16,r1 ;(link)
- shlq #24,r1
- movei #_sbar,r3
- load (r3),r3
- addq #2,r3
- loadw (r3),r3
- movei #$ffff8000,scratch
- add scratch,r3
- xor scratch,r3
- shlq #14,r3
- add r3,r1
- load (r0),r0
- shlq #4,r0
- add r0,r1
- move r1,r0
- store r0,(r2)
-
- movei #88,r0
- move r15,r1 ;(worklist_p)
- add r0,r1
- move r17,r0 ;(pwidth)
- shrq #4,r0
- store r0,(r1)
-
- movei #92,r0
- move r15,r1 ;(worklist_p)
- add r0,r1
- move r17,r0 ;(pwidth)
- shlq #28,r0
- move r17,r2 ;(pwidth)
- shlq #18,r2
- add r2,r0
- movei #32768,r2
- add r2,r0
- movei #12288,r2
- add r2,r0
- store r0,(r1)
-
+; foreground: links to the debug screen if it is up
+ movei #_stopobj,r16
+ sharq #3,r16 ;(link)
  movei #_debugscreenactive,r0
  load (r0),r0
- moveq #0,r1
- cmp r0,r1
- movei #L54,scratch
- jump EQ,(scratch)
+ cmpq #0,r0
+ jr EQ,sb_nodebug
  nop
-
- movei #112,r0
- move r15,r1 ;(worklist_p)
- add r0,r1
- move r1,r0
- sub r18,r0 ;(delta)
- sharq #3,r0
- move r0,r16 ;(link)
-
- movei #L55,r0
- jump T,(r0)
- nop
-
-L54:
-
- movei #_stopobj,r0
- sharq #3,r0
- move r0,r16 ;(link)
-
-L55:
-
- movei #96,r0
- move r15,r1 ;(worklist_p)
- add r0,r1
+ movei #160,r16
+ add r15,r16 ;(worklist_p)
+ sub r18,r16 ;(delta)
+ sharq #3,r16 ;(link)
+sb_nodebug:
+ movei #128,SB_OBJ
+ add r15,SB_OBJ
  movei #_sbartop,r0
  load (r0),r0
  shlq #8,r0
- move r16,r2 ;(link)
- shrq #8,r2
- add r2,r0
- store r0,(r1)
-
- movei #100,r0
- move r15,r1 ;(worklist_p)
- add r0,r1
- move r16,r0 ;(link)
+ move r16,r1
+ shrq #8,r1
+ add r1,r0
+ store r0,(SB_OBJ)
+ addq #4,SB_OBJ
+ move r16,r0
  shlq #24,r0
- movei #_sbar,r2
- load (r2),r2
- addq #2,r2
- loadw (r2),r2
- movei #$ffff8000,scratch
- add scratch,r2
- xor scratch,r2
- shlq #14,r2
- add r2,r0
- movei #_BASEORGY,r2
- load (r2),r2
- movei #180,r3
- add r3,r2
- addq #1,r2
- shlq #4,r2
- add r2,r0
- store r0,(r1)
-
- movei #104,r0
- move r15,r1 ;(worklist_p)
- add r0,r1
- move r17,r0 ;(pwidth)
- shrq #4,r0
- movei #32768,r2
- add r2,r0
- store r0,(r1)
-
- movei #108,r0
- move r15,r1 ;(worklist_p)
- add r0,r1
- move r17,r0 ;(pwidth)
- shlq #28,r0
- move r17,r2 ;(pwidth)
- shlq #18,r2
- add r2,r0
- movei #32768,r2
- add r2,r0
- movei #12288,r2
- add r2,r0
- store r0,(r1)
+ add SB_TOP,r0
+ store r0,(SB_OBJ)
+ addq #4,SB_OBJ
+ movei #32770,r0		; transparent, iwidth 40>>4
+ store r0,(SB_OBJ)
+ addq #4,SB_OBJ
+ store SB_W3,(SB_OBJ)
+ addq #4,SB_OBJ
+ moveq #0,r0
+ store r0,(SB_OBJ)
+ addq #4,SB_OBJ
+ movei #$2040,r0
+ store r0,(SB_OBJ)
 
  movei #_stopobj,r0
  sharq #3,r0
  move r0,r16 ;(link)
  moveq #4,r0
  move r0,r17 ;(pwidth)
- movei #112,r0
+ movei #160,r0
  move r15,r1 ;(worklist_p)
  add r0,r1
  movei #_debugscreen,r0
@@ -522,7 +471,7 @@ L55:
  add r2,r0
  store r0,(r1)
 
- movei #116,r0
+ movei #164,r0
  move r15,r1 ;(worklist_p)
  add r0,r1
  move r16,r0 ;(link)
@@ -535,7 +484,7 @@ L55:
  add r2,r0
  store r0,(r1)
 
- movei #120,r0
+ movei #168,r0
  move r15,r1 ;(worklist_p)
  add r0,r1
  move r17,r0 ;(pwidth)
@@ -544,7 +493,7 @@ L55:
  add r2,r0
  store r0,(r1)
 
- movei #124,r0
+ movei #172,r0
  move r15,r1 ;(worklist_p)
  add r0,r1
  move r17,r0 ;(pwidth)
@@ -586,7 +535,11 @@ L57:
  nop
 
  movei #_isrvmode,r0
- movei #3777,r1
+ movei #_viewvmode,r1	; 0xc1 + (PWIDTH-1)<<9 for the detail setting
+ load (r1),r1
+ store r1,(r0)
+ movei #_frontendlist,r0	; the view is up, not the 320 wide 8 bit page
+ moveq #0,r1
  store r1,(r0)
  movei #_readylist_p,r0
  store r15,(r0) ;(worklist_p)
@@ -670,6 +623,11 @@ L51:
  .extern _BASEORGY
  .extern _ticcount
  .extern _workingscreen
+ .extern _viewpwidth
+ .extern _viewxpos
+ .extern _viewvmode
+ .extern _frontendlist
+ .extern _sbarscaled
 
 	.phrase
 	.68000

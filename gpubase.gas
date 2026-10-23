@@ -67,8 +67,9 @@ R0_ISRSTACK	.equr	r31
 ;
 	load    (R0_FLAGS),r29           ; get current flags
 
-	move	R0_VMODE,r30		; VMODE
-	storew	R0_MODEBITS,(r30) 
+	load	(R0_MODEBITS),r30	; _sbarvmode
+	storew	r30,(R0_VMODE)		; VMODE for the status bar
+	move	R0_VMODE,r30
 	subq	#2,r30				; $f00026, OBF	
 	storew	r28,(r30)			; restart object processor
 
@@ -85,6 +86,7 @@ R0_ISRSTACK	.equr	r31
 	.long
 _gpucodestart::		.dc.l	0
 _gpufinished::		.dc.l	0
+_sbarvmode::		.dc.l	$c1+(3<<9)	; 320 mode; the 640 view keeps its own (r_detail.c)
 
 _intstack:			.dc.l	0,0,0,0		; give it some room to be flaky...
 
@@ -100,7 +102,7 @@ _gpubase_init::
 	movei   #_intstack+8,R0_INTSTACK
 	move	R0_INTSTACK,r31
 	movei	#$f00028,R0_VMODE
-	movei	#$c1+(3<<9),R0_MODEBITS		; 320 mode
+	movei	#_sbarvmode,R0_MODEBITS		; where the status bar's VMODE is
 	movei   #(1<<7)+(1<<14),r9			; enable OBJ, reg page 1
 	store   r9,(R0_FLAGS)
 

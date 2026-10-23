@@ -81,6 +81,11 @@ class Emu:
         os.remove(ppm)
         return path
 
+    def hash(self, y0=0, y1=1 << 20):
+        """(width, height, hash of rows y0..y1-1) of the last frame"""
+        w, h, v = self._cmd(f"hash {y0} {y1}").split()
+        return int(w), int(h), v
+
     def wav(self, path):
         assert self._cmd(f"wav {path}") == "ok"
 

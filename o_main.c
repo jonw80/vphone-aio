@@ -39,6 +39,7 @@ typedef enum
 {
 	soundvol,
 	musicvol,
+	detail,
 	controls,
 	NUMMENUITEMS
 } menupos_t;
@@ -78,6 +79,10 @@ char buttonb[NUMCONTROLOPTIONS][8] =
 char buttonc[NUMCONTROLOPTIONS][8] =
 		{"Use","Fire","Use","Speed","Fire","Speed"};
 
+/* the 3D view's columns: 160 (the original), 320 (the Jaguar's full */
+/* width) and 640 (more than the hardware keeps up with; for emulators) */
+char detailname[NUMDETAILS][8] = {"Low","High","Ultra"};
+
 unsigned configuration[NUMCONTROLOPTIONS][3] =
 {
 	{BT_A, BT_B, BT_C},
@@ -103,13 +108,22 @@ void O_SetButtonsFromControltype (void)
 /* */
 void O_DrawControl(void)
 {
-	EraseBlock(menuitem[controls].x + 40, menuitem[controls].y + 20, 90, 80);
-	print(menuitem[controls].x + 40, menuitem[controls].y + 20, buttona[controltype]);
-	print(menuitem[controls].x + 40, menuitem[controls].y + 40, buttonb[controltype]);
-	print(menuitem[controls].x + 40, menuitem[controls].y + 60, buttonc[controltype]);
+	EraseBlock(menuitem[controls].x + 40, menuitem[controls].y + 18, 90, 72);
+	print(menuitem[controls].x + 40, menuitem[controls].y + 18, buttona[controltype]);
+	print(menuitem[controls].x + 40, menuitem[controls].y + 36, buttonb[controltype]);
+	print(menuitem[controls].x + 40, menuitem[controls].y + 54, buttonc[controltype]);
 /*	IN_DrawValue(30, 20, controltype); */
 	
 	O_SetButtonsFromControltype ();
+}
+
+/* */
+/* Draw detail value */
+/* */
+void O_DrawDetail(void)
+{
+	EraseBlock(menuitem[detail].x + 100, menuitem[detail].y, 90, 20);
+	print(menuitem[detail].x + 100, menuitem[detail].y, detailname[detailsetting]);
 }
 
 /*
@@ -146,7 +160,7 @@ void O_Init (void)
 /*    strcpy(menuitem[0].name, "  Volume"); */
     D_strncpy(menuitem[0].name, "  Volume", 8); /* Fixed CEF */
 	menuitem[soundvol].x = 95;
-	menuitem[soundvol].y = 40;
+	menuitem[soundvol].y = 30;
 	menuitem[soundvol].hasslider = true;
 
  	slider[soundvol].maxval = 16;
@@ -154,16 +168,21 @@ void O_Init (void)
 
 	D_strncpy(menuitem[musicvol].name, "   Music", 8);
 	menuitem[musicvol].x = 95;
-	menuitem[musicvol].y = 80;
+	menuitem[musicvol].y = 64;
 	menuitem[musicvol].hasslider = true;
 
  	slider[musicvol].maxval = 16;
 	slider[musicvol].curval = 16*musicvolume/255;
 
 /*    strcpy(menuitem[1].name, "Controls"); */
+	D_strncpy(menuitem[detail].name, "  Detail", 8);
+	menuitem[detail].x = 95;
+	menuitem[detail].y = 102;
+	menuitem[detail].hasslider = false;
+
     D_strncpy(menuitem[controls].name, "Controls", 8); /* Fixed CEF */
 	menuitem[controls].x = 95;
-	menuitem[controls].y = 120;
+	menuitem[controls].y = 128;
 	menuitem[controls].hasslider = false;
 
 }
@@ -273,6 +292,8 @@ void O_Control (player_t *player)
 					if(controltype == NUMCONTROLOPTIONS)
 						controltype = (NUMCONTROLOPTIONS - 1); 
 				}			
+				if (cursorpos == detail && detailsetting < NUMDETAILS-1)
+					detailsetting++;	/* R_Setup applies it */
 			}
 			if (buttons & JP_LEFT)
 			{
@@ -282,6 +303,8 @@ void O_Control (player_t *player)
 					if(controltype == -1)
 						controltype = 0; 
 				}
+				if (cursorpos == detail && detailsetting > 0)
+					detailsetting--;
 			}
 		}
 	}
@@ -292,8 +315,8 @@ void O_Drawer (void)
 	int		i;
 	int		offset;
 	
-/* Erase old and Draw new cursor frame */
-	EraseBlock(56, 36, o_cursor1->width, 200);
+/* Erase old and Draw new cursor frame (it is drawn at 60: erase all of it) */
+	EraseBlock(56, 26, o_cursor1->width + 8, 174);
 	if(cursorframe)
 		DrawJagobj(o_cursor1, 60, menuitem[cursorpos].y - 2);
 	else
@@ -319,11 +342,12 @@ void O_Drawer (void)
 	
 /* Draw control info */
 
-	print(menuitem[controls].x + 10, menuitem[controls].y + 20, "A");
-	print(menuitem[controls].x + 10, menuitem[controls].y + 40, "B");
-	print(menuitem[controls].x + 10, menuitem[controls].y + 60, "C");
+	print(menuitem[controls].x + 10, menuitem[controls].y + 18, "A");
+	print(menuitem[controls].x + 10, menuitem[controls].y + 36, "B");
+	print(menuitem[controls].x + 10, menuitem[controls].y + 54, "C");
 
 	O_DrawControl();
+	O_DrawDetail();
 
 /* debug stuff */
 #if 0

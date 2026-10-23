@@ -25,7 +25,7 @@ DSP_RESERVE = 0x100            # shipped p_base leaves 280 bytes, so this is pro
 # name: (load address, highest allowed end address, extra tail bytes)
 OVERLAYS = {
     # GPU refresh phases and the LZSS decompressor
-    "r_phase1": (GPU_LOAD, GPU_STACK - GPU_RESERVE, 47 * 4),   # solidsegs[12][4]
+    "r_phase1": (GPU_LOAD, GPU_STACK - GPU_RESERVE, 127 * 4),  # solidsegs[64] of 2 longs
     "r_phase2": (GPU_LOAD, GPU_STACK - GPU_RESERVE, 0),
     "r_phase3": (GPU_LOAD, GPU_STACK - GPU_RESERVE, 0),
     "r_phase4": (GPU_LOAD, GPU_STACK - GPU_RESERVE, 0),

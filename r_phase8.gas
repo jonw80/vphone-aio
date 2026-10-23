@@ -147,9 +147,10 @@ blitwait1:
 	load	(r1),r1
 	movei	#$f02200,r0
 	store	r1,(r0)				; A1 base = screen
-	movei	#COL_A1SCREEN,r1
+	movei	#_col_a1screen,r1
+	load	(r1),r1
 	movei	#$f02204,r0
-	store	r1,(r0)				; A1 flags = screen window (160 wide, 16 bpp)
+	store	r1,(r0)				; A1 flags = screen window (screenwidth wide, 16 bpp)
 	movei	#$10000,r1
 	movei	#COL_A1STEP_REG,r0
 	store	r1,(r0)				; A1 step: +1 row per pixel
@@ -221,7 +222,8 @@ L411:
 	 
 	move	dv_x,r0 ;(x)
 	shlq	#2,r0
-	movei	#_spropening,r1
+	movei	#_spropening_p,r1
+	load	(r1),r1
 	add		r1,r0
 	load	(r0),dv_bottomclip
 	load	(dv_column),dv_oldcolread	; start first read now
@@ -472,7 +474,8 @@ _R_Sprites::
  store r1,(r0)
 
  movei #15737384,r0
- movei #COL_A2FLAGS,r1
+ movei #_col_a2flags,r1		; COL_A2FLAGS for the screen width
+ load (r1),r1
  store r1,(r0)
 
  movei #_lastsprite_p,r0
@@ -642,7 +645,8 @@ L67:
 
  move r16,r0 ;(i)
  shlq #2,r0
- movei #_spropening,r1
+ movei #_spropening_p,r1
+ load (r1),r1
  add r1,r0
  movei #180,r1
  store r1,(r0)
@@ -715,8 +719,10 @@ spr_idle:
 	movei	#FLAGS_16BPP+FLAGS_W128+FLAGS_XZERO,r1
 	movei	#$f02204,r0
 	store	r1,(r0)
-	movei	#FLAGS_16BPP+FLAGS_W160+FLAGS_XZERO,r1
+	movei	#_col_a2flags,r1
+	load	(r1),r1
 	movei	#$f02228,r0
+	bclr	#18,r1				; FLAGS_16BPP+FLAGS_W(screenwidth)+FLAGS_XZERO
 	store	r1,(r0)
 	.endif
 
@@ -790,7 +796,8 @@ L77:
 
  move r15,r0 ;(x)
  shlq #2,r0
- movei #_spropening,r1
+ movei #_spropening_p,r1
+ load (r1),r1
  add r1,r0
  movei #180,r1
  store r1,(r0)
@@ -1024,7 +1031,8 @@ L103:
 
  move r15,r0 ;(x)
  shlq #2,r0
- movei #_spropening,r1
+ movei #_spropening_p,r1
+ load (r1),r1
  add r1,r0
  movei #46080,r1
  store r1,(r0)
@@ -1078,7 +1086,8 @@ L109:
 
  move r15,r0 ;(x)
  shlq #2,r0
- movei #_spropening,r1
+ movei #_spropening_p,r1
+ load (r1),r1
  add r1,r0
  load (r0),r0
  move r0,r16 ;(opening)
@@ -1093,7 +1102,8 @@ L109:
 
  move r15,r0 ;(x)
  shlq #2,r0
- movei #_spropening,r1
+ movei #_spropening_p,r1
+ load (r1),r1
  add r1,r0
  movei #65280,r1
  move r16,r2 ;(opening)
@@ -1143,7 +1153,8 @@ L117:
 
  move r15,r0 ;(x)
  shlq #2,r0
- movei #_spropening,r1
+ movei #_spropening_p,r1
+ load (r1),r1
  add r1,r0
  load (r0),r0
  move r0,r16 ;(opening)
@@ -1158,7 +1169,8 @@ L117:
 
  move r15,r0 ;(x)
  shlq #2,r0
- movei #_spropening,r1
+ movei #_spropening_p,r1
+ load (r1),r1
  add r1,r0
  load (FP+6),r1 ; local topsil
  move r15,r2 ;(x)
@@ -1210,7 +1222,8 @@ L125:
 
  move r15,r0 ;(x)
  shlq #2,r0
- movei #_spropening,r1
+ movei #_spropening_p,r1
+ load (r1),r1
  add r1,r0
  load (r0),r0
  move r0,r19 ;(top)
@@ -1250,7 +1263,8 @@ L131:
 
  move r15,r0 ;(x)
  shlq #2,r0
- movei #_spropening,r1
+ movei #_spropening_p,r1
+ load (r1),r1
  add r1,r0
  move r19,r1 ;(top)
  shlq #8,r1
@@ -1304,7 +1318,7 @@ L76:
 
  .extern _R_SegBehindPoint
  .long
-_spropening::
+_spropening::		; spropening[160]; wider screens use main RAM (r_detail.c)
  .dc.l 0
  .dc.l 0
  .dc.l 0
@@ -1478,6 +1492,9 @@ _spropening::
  .extern _ref9_start
  .extern _framecount
  .extern _workingscreen
+ .extern _spropening_p
+ .extern _col_a1screen
+ .extern _col_a2flags
 
 	.phrase
 	.68000

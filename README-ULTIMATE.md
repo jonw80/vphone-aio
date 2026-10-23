@@ -10,13 +10,15 @@ grounded in the *Jaguar Technical Reference Manual* (Tom & Jerry, rev. 8,
 | [Translucent spectres](#2-translucent-spectres) | Spectres shimmer as a darkened, displaced copy of what's behind them, like PC Doom's fuzz. They used to be drawn as ordinary opaque demons. | `r_phase3.gas`, `r_phase8.gas` |
 | [Faster columns](#3-faster-wall-sky-and-sprite-columns) | Walls, sky and sprites are drawn with one blitter inner loop per column instead of one outer-loop pass per pixel. | `colblit.inc`, `r_phase6.gas`, `r_phase8.gas` |
 | [No bus stealing while waiting](#4-no-bus-stealing-while-waiting) | The GPU stops hammering DRAM while it waits for the blitter or the next frame, so the blitter and the 68000 (game logic) get those cycles. | `r_phase7.gas`, `r_phase9.gas` |
+| [Detail: 160, 320 or 640 columns](#6-detail-160-320-or-640-columns) | A **Detail** line in Options. Low is the original 160-column view; High draws 320 columns, one per pixel of the Jaguar's 320-pixel mode; Ultra draws 640 for emulators on a PC. | `r_detail.c`, `r_phase1`-`9.gas`, `jagonly.c`, `gpubase.gas` |
+| [Textures tile down tall walls](#7-textures-tile-down-tall-walls) | Walls taller than their texture repeat it, as on the PC, instead of running into the next texture column and then into whatever memory follows the texture. | `r_phase6.gas` |
 | [A complete game from the Jaguar Doom TC](#5-a-complete-game-from-the-jaguar-doom-tc) | `tools/build-tc.sh` turns the PC "Jaguar Doom TC" PWAD plus Freedoom into a full cartridge: all 24 levels, sprites, textures, sounds, music with synthesized instruments, attract-mode demos. Runs in Virtual Jaguar. | `tools/mkwad.py`, `tools/jagmusic.py`, `tools/emu/` |
 | [Verification tooling](#verification) | `tools/verify.sh`: assembles everything, checks the C, checks every GPU/DSP overlay against its RAM budget, and runs functional tests on a JRISC + blitter model. | `tools/`, `tests/` |
 
 **Status: builds with free tools into a cartridge image that runs in a
 full Jaguar emulator (Virtual Jaguar): title, menus, options, levels from
-all three episodes, music and effects, spectres, intermission, attract
-demos. Not yet run on a real Jaguar.** The game data is not included: bring
+all three episodes at all three Detail settings, music and effects,
+spectres, intermission, attract demos. Not yet run on a real Jaguar.** The game data is not included: bring
 a dump of your own cartridge, or build the TC version from the Jaguar Doom
 TC PWAD and Freedoom. See [Building](#building) and
 [Testing on hardware](#testing-on-hardware).
@@ -183,7 +185,8 @@ from the loaders and the GPU code rather than guessed:
   pixels LZSS-packed in the next lump. Rotations and mirrored views follow
   each frame's flip flags. Weapon sprites are halved in width and their
   offsets moved: `R_FinishPSprite` draws them 1:1 on the 160x180 view,
-  whose pixels are twice as wide as the PC's.
+  whose pixels are twice as wide as the PC's (2x or 4x across on the
+  wider views of [section 6](#6-detail-160-320-or-640-columns)).
 * **Textures** (71, of the 128 the engine holds) composited from patches,
   column-major, power-of-2 wide; the TC's own artwork where it has it,
   Freedoom's definitions otherwise. One texture shares its name with a
@@ -220,6 +223,8 @@ solid things, collision boxes the way `P_CheckPosition` sees them), steers
 by reading the player's position from emulated RAM, fights what it sees
 and presses the exit switch. It finished E1M1 into the intermission, and
 gave the screenshots of every episode, spectres and the options screen.
+`tools/emu/detail.py` starts every level at each Detail setting and
+measures the frame rate ([section 6](#6-detail-160-320-or-640-columns)).
 `tools/emu/endings.py` plays the episode endings: on E1M8 it rides the lift
 into the star, opens the cage and kills both barons, and `A_BossDeath`
 lowers the tag-666 floor (176 to -136, read from RAM) a second after the
@@ -237,6 +242,144 @@ exactly: playback ends at the position where the recording ended.
 `INSTSTRT` marker itself and stored that lump's "instrument number" (3386)
 far past the end of `instruments[256]`; it now starts after the marker and
 bounds-checks.
+
+## 6. Detail: 160, 320 or 640 columns
+
+**The problem.** The shipped refresh draws a 160x180 view and shows it in a
+video mode whose pixels are 8 clocks wide (VMODE PWIDTH 8, TRM p.68), so
+each column is two pixels of the 320-pixel status bar beneath it. The width
+was not a setting: it was in the precomputed angle tables, in structure
+sizes the GPU code had worked out by hand (a visplane was 348 bytes because
+it held 160 columns), and in constants all through the nine GPU phases.
+
+**What it does now.** Options has a **Detail** line, saved in the EEPROM:
+
+| Detail | Columns | Video mode | For |
+|---|---|---|---|
+| Low | 160 | PWIDTH 8 | the original |
+| High | 320 | PWIDTH 4, the 320-pixel mode the status bar and menus use | the Jaguar's full horizontal resolution |
+| Ultra | 640 | PWIDTH 2 for the whole frame | emulators on a PC; more GPU work than the hardware keeps up with |
+
+The view stays 180 lines with the same vertical scale, so the picture has
+the same shape and field of view in every mode, with two or four times the
+horizontal detail.
+
+**How.**
+
+* `r_detail.c` builds `viewangletox[]`, `xtoviewangle[]` and `distscale[]`
+  for the width at run time with the arithmetic the shipped tables were made
+  with (a 90 degree field of view, `FixedMul` rounding down). At 160 columns
+  it reproduces the shipped tables exactly, so `tables.c` no longer carries
+  them. The 68000's 32-bit multiply is a library call, so the table code
+  multiplies with `mulu.w` and the column search is linear (one pass over
+  the angles); a change of Detail costs a fraction of a second, applied in
+  `R_Setup` when the GPU is idle.
+* The GPU phases read the width from main RAM instead of constants:
+  `screenwidth` for the solid-segment sentinels and the sprite and weapon
+  edge clips; `centerxfrac` for the sprite projection; `clipangle` (which
+  is no longer exactly the same angle at every width); `centerx` for the
+  flat steps; and the blitter's screen window flags (`col_a2flags`,
+  `col_a1screen`, `plane_a2flags`, made from the TRM p.80 width codes $1D,
+  $21 and $25). Sprites keep their height through `stretchx`, the 2.2
+  vertical stretch divided by the width factor. The weapon is drawn 2x or
+  4x across.
+* Visplanes are laid out for 640 columns in every mode (`VISPLANE_SIZE`,
+  1308 bytes). The span commands that `R_PlaneLoop` queues for
+  `R_MapPlane` were packed as `x2<<16 | y<<8 | x1`, which caps x at 255;
+  they are now `x2<<20 | y<<10 | x1`.
+* The per-column arrays `clipbounds[]` (phase 6) and `spropening[]`
+  (phase 8) live in GPU RAM, which only has room for 160 of them. The
+  phases now go through a pointer that points at the GPU RAM copy at Low,
+  so Low keeps its speed, and at a main RAM array when wider.
+* The frame buffers grow to 230 KB each (640x180x2). They move down to
+  `$17F800` and `$1B7C00`, ending at the sound buffer, and the heap's top
+  moves down with them. That costs the purgeable texture cache 324 KB of its
+  800 KB; levels use 70-190 KB of it.
+* **Ultra and the status bar.** The shipped game switches the video mode to
+  320 pixels at the status bar from the GPU's object interrupt. Real
+  hardware takes a mid-frame mode change in its stride, but emulators such
+  as Virtual Jaguar size their output from one video mode per frame, and a
+  640 top over a 320 bottom shows half the view. So at Ultra the frame stays
+  in the 640-pixel mode, and the two status bar objects become *scaled*
+  bitmap objects (TRM p.19) with HSCALE 2.0, which write every pixel twice
+  into the line buffer. They now have three-phrase slots on 32-byte
+  boundaries in every mode (`init.s` aligns the list buffers and
+  `CopyObjList` copies 44 longs). Their TYPE is 0, unscaled, below Ultra.
+  The mode the interrupt writes is a variable in `gpubase`,
+  `_sbarvmode`.
+* The automap draws at the view's width, with the same map scale across
+  the screen, so finer lines. The pause plaque is drawn 2x or 4x across, and
+  is told the 320-pixel front-end page from a 320-column view by a flag
+  (`frontendlist`), since the two use the same VMODE. The automap clears its
+  view a line at a time: 640x180 pixels would overflow the blitter's 16-bit
+  inner count.
+
+**Cost.** Columns are the refresh's main expense, and High has twice as
+many. Measured in Virtual Jaguar with its DRAM, blitter and GPU pipeline
+timing models switched on (`tools/emu/detail.py`, five seconds turning on
+the spot at the start of every level):
+
+| Detail | Mean over 24 levels | Slowest level | Levels at the 30 cap |
+|---|---|---|---|
+| Low (160) | 29.4 frames/s | 26.2 (MAP02, MAP21) | 15 |
+| High (320) | 27.2 frames/s | 20.8 (MAP21) | 8 |
+| Ultra (640) | 21.4 frames/s | 13.8 (MAP21) | 1 |
+
+(`VJ_OPTS="dram_timing=enabled,blitter_timing=enabled,gpu_pipeline_timing=enabled" tools/emu/detail.py doom-tc.j64 outdir`;
+`tools/emu/run.c` passes `VJ_OPTS` to the core as its options.)
+
+The game caps itself at 30 frames a second, which hides Low's real speed
+on most levels. In the slowest level High keeps 79% of Low's frame rate and
+Ultra 53%. The emulator's timing is a model ("still being calibrated", its
+options say), so read these as the ratio between the modes, not as what a
+console will show; on hardware, Ultra is for emulators.
+
+**Checking Low.** Low has to draw exactly what it drew before. Comparing it
+with the previous build turned up something unexpected: the previous build
+does not draw the same pixels as *itself* once its data moves. Shifting its
+`.data` by 4 bytes changes a few texels in about half the frames of the
+attract demos. Taken one step at a time in the emulator, with a GPU hook
+logging every wall blit at one screen column, it comes down to this: a wall
+column taller than its texture ran off the end of the cached texture into
+the next zone block's header. That header holds a pointer to the block's
+owner, a variable whose address moves with every build. That's the bug
+[section 7](#7-textures-tile-down-tall-walls) fixes. With it fixed, the
+renderer's output no longer depends on where anything sits in memory: the
+current build and the same build shifted by 4 bytes give identical frames
+through the whole attract loop (2,204 distinct frames). Before the tiling
+fix, the frames where the new Low differed from the previous build differed
+in the same few texels, and by the same amount, as the previous build does
+from itself shifted by 4 bytes; game state (positions, view height, angle,
+tic) was identical throughout.
+
+That comparison needs two test-only changes (not in the source). The game
+lets the 68000 run the next tic while the GPU draws, so a build that draws a
+little faster shows different tics at a given video frame. One change makes
+the next tic wait for the GPU. The other compares the sequence of *distinct*
+frames rather than frames at fixed times: demo tics are a fixed four
+vblanks of game time and every tic is drawn once, so that sequence doesn't
+depend on speed (`tools/emu/run.c`'s `hash` command makes it cheap).
+
+## 7. Textures tile down tall walls
+
+Jaguar Doom caches each wall texture column after column, and draws a wall
+column as one linear blit through that data. When a wall was taller than
+its texture, the blit simply carried on: into the next column of the
+texture, and from the last column into whatever followed the texture in
+memory. When the texture position started above the texture, the code
+stepped back a whole column instead of wrapping within it. The TC's levels
+come from PC ports, where textures repeat down tall walls, so this showed
+up as misaligned blocks and stray garbage texels at the tops of wall
+details.
+
+`R_DrawTexture` now wraps the texture row at the texture's height, as PC
+Doom tiles it, and splits the column's blit where the row wraps: one blit
+per repeat, each inside the column. A column that doesn't wrap still costs
+one blit, plus a divide to find where it would wrap.
+`tests/test_columns.py` checks every pixel of 320 columns against the
+texture tiled at heights 128 and 72, many of them wrapping, with a marker
+pattern after the texture that must never show. The previous code fails at
+the first wrapping column.
 
 ## Verification
 
@@ -270,10 +413,15 @@ tools/verify.sh
    * `test_columns.py` runs the real `R_DrawTexture` and `R_DrawVisSprite`:
      with `FASTCOLUMNS` on and off they must draw **identical pixels** for
      walls and sprites under **both** readings of bug #11 (A2's Y add bit
-     honoured, or driven by A1's). Spectres must be darkened copies of the
-     screen 0-2 rows below and touch nothing else. The sky blit, which is
-     inlined in `R_SegLoop`, is checked statically for the registers it
-     programs.
+     honoured, or driven by A1's). Walls must tile their texture at its
+     height and never read past it (checked texel by texel against a
+     Python reference). Sprites on 320- and 640-column screens, with
+     `spropening[]` in main RAM, must stay inside their columns. Spectres
+     must be darkened copies of the screen 0-2 rows below and touch nothing
+     else. The sky blit, which is inlined in `R_SegLoop`, is checked
+     statically for the registers it programs.
+   * `R_SetDetail(detail_low)` was checked on the host against the shipped
+     160-column tables (all 4,417 entries equal), and in emulated RAM.
 
 The tests have already paid for themselves: they caught that rmac evaluates
 expressions **strictly left to right** (`1+2*3` is 9), so an address written
@@ -377,17 +525,18 @@ What to look at, in order of risk:
    refresh timing in `R_DebugScreen`. Compare against the shipped build in
    the same spot: expect gains in wall- and sprite-heavy views from
    `FASTCOLUMNS` and the bus fixes, and some cost with music on.
+5. **Detail.** At High the view and the status bar should line up at the
+   left edge as at Low, with twice the detail across. At Ultra, the status
+   bar is drawn by scaled objects in the 640-pixel mode; if it is missing or
+   doubled, look at the object list `r_phase9.gas` builds (the scaled
+   objects' 32-byte alignment and their third phrase). Watch the frame rate
+   at High against Low in the same spot, and open the automap at each
+   setting.
 
 ## Looked at and not done
 
-* **320-wide rendering.** The obvious visual upgrade, but the 160-column
-  assumption is baked into precomputed tables (`xtoviewangle`, `distscale`,
-  `viewangletox`), hand-computed structure offsets in the GPU code (a
-  visplane is 348 bytes because it holds 160 columns), and every column
-  loop. It also doubles per-column GPU work, which is the refresh's main
-  cost. Doing it well is a rewrite of the refresh, not a patch.
 * **Loading GPU overlays with the blitter** (the manual's recommended method,
-  TRM p.36). The resident `gpubase` has 16 bytes free, the phases rely on
+  TRM p.36). The resident `gpubase` has 8 bytes free, the phases rely on
   blitter state set by `R_Setup` that the loader would clobber, and the
   estimated saving is about 1 ms per frame.
 * **Deeper light diminishing.** Jaguar lighting subtracts at most

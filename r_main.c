@@ -223,8 +223,7 @@ D_printf ("R_InitData\n");
 	R_InitData ();
 D_printf ("Done\n");
 
-	clipangle = xtoviewangle[0];
-	doubleclipangle = clipangle*2;
+	R_SetDetail (detailsetting);	/* view tables, clipangle */
 	
 	framecount = 0;
 	viewplayer = &players[0];
@@ -302,6 +301,11 @@ void R_Setup (void)
 	player_t *player;
 	int		shadex, shadey, shadei;
 	
+/* */
+/* a new detail setting takes effect here, with the GPU idle */
+/* */
+	R_SetDetail (detailsetting);
+
 /* */
 /* set up globals for new frame */
 /* */

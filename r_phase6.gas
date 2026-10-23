@@ -89,9 +89,11 @@ _R_SegCommands::
 ;==============================================================================
  subq #32,FP
 
-	movei	#_clipbounds,r0
+	movei	#_clipbounds_p,r0
+	load	(r0),r0		; this overlay's _clipbounds, or main RAM when wide
+	movei	#_screenwidth,r2
+	load	(r2),r2
 	movei	#180,r1		; SCREENHEIGHT
-	movei	#160,r2		; SCREENWIDTH
 	movei	#clearclipbounds,r3
 	
 clearclipbounds:
@@ -117,7 +119,8 @@ clearclipbounds:
  store r1,(r0)
 
  movei #15737384,r0
- movei #COL_A2FLAGS,r1
+ movei #_col_a2flags,r1	; COL_A2FLAGS for the screen width
+ load (r1),r1
  store r1,(r0)
 
  movei #_viswalls,r0
@@ -420,7 +423,7 @@ stopok:
 ; next plane
 ;
 L105:
-	movei	#348,r0
+	movei	#VISPLANE_SIZE,r0
 	add		r0,fp_check
 
 L104:
@@ -433,7 +436,7 @@ L104:
 ; make a new plane
 ;
 	move	fp_lastvisplane,fp_check
-	movei	#348,r3
+	movei	#VISPLANE_SIZE,r3
 	add		r3,fp_lastvisplane
 	movei	#_lastvisplane,scratch
 	store	fp_lastvisplane,(scratch)			; visplane++
@@ -445,14 +448,16 @@ L104:
 	store	fp_stop,(fp_check+4)
 
 ;
-; for i=0 ; i<80 ; i++ 
+; for i=0 ; i<screenwidth/2 ; i++ 
 ; (int)check->open[i] = 0xff00ff00
 ;
 	move	fp_check,fp_set
 	addq	#24,fp_set
 	
+	movei	#_screenwidth,r1
+	load	(r1),r1
 	movei	#$ff00ff00,r0
-	movei	#40,r1
+	shrq	#2,r1
 		
 fillloop:
 	store	r0,(fp_set)
@@ -567,21 +572,58 @@ dt_notneg:
 	load	(dt_tex+5),dt_frac		; tex->texturemid
 	sub		dt_MATHA,dt_frac
 
-; while frac < 0 colnum--,frac += tex->height<<16
-	jr		PL,fracpos
+;
+; The texture tiles down the wall, as in PC Doom: the row wraps at the
+; texture's height.  The texture is cached column-major and a column is one
+; linear blit through it, so the blit is split where the row wraps.  The
+; shipped code instead stepped back a whole column when frac was negative,
+; and drew on down the cached data when a wall was taller than its texture:
+; into the next column, and from the last one into whatever followed the
+; texture in memory (the next zone block's header, whose pointer to its
+; owner changes with every build).
+;
+dt_h		.equr	r12		; tex->height
+dt_h16		.equr	r13		; tex->height<<16
+dt_colend	.equr	r26		; frac at the end of this column
+dt_rows		.equr	r27		; rows still to draw
+dt_n		.equr	r6		; row in the column, then rows in this piece
+dt_q		.equr	r9
+
+	load	(dt_tex+2),dt_h			; tex->height
+	move	dt_h,dt_h16
+	shlq	#16,dt_h16
+	move	dt_frac,dt_n
+	cmp		dt_h16,dt_n
+	jr		CS,dt_fracok			; 0 <= frac < height<<16 (unsigned): no wrap
 	nop
-subagain:
-	load	(dt_tex+2),dt_scratch		; tex->height
-	shlq	#16,dt_scratch
-	add		dt_scratch,dt_frac
-	jr		MI,subagain
-	subq	#1,dt_colnum
-fracpos:
+	abs		dt_n					; |frac|
+	move	dt_n,dt_q
+	div		dt_h16,dt_q				; whole texture heights in it
+	mult	dt_h,dt_q
+	shlq	#16,dt_q
+	sub		dt_q,dt_n				; |frac| mod (height<<16)
+	btst	#31,dt_frac
+	jr		EQ,dt_fracok
+	nop
+	cmpq	#0,dt_n
+	jr		EQ,dt_fracok
+	nop
+	neg		dt_n
+	add		dt_h16,dt_n				; negative: count back from the bottom
+dt_fracok:
 
 ; colnum = colnum - tex->width*(colnum/tex->width)
 	load	(dt_tex+1),dt_scratch		; tex->width
 	subq	#1,scratch
 	and		scratch,dt_colnum
+
+; frac = (colnum*tex->height)<<16 + row, colend = the next column's frac
+	move	dt_colnum,dt_frac
+	mult	dt_h,dt_frac
+	shlq	#16,dt_frac
+	move	dt_frac,dt_colend
+	add		dt_h16,dt_colend
+	add		dt_n,dt_frac
 	
 ; a1inc
 	move	dt_iscale,dtb_a1inc
@@ -591,37 +633,15 @@ fracpos:
 	movei	#$ffff,dtb_a1incfrac
 	and		dt_iscale,dtb_a1incfrac
 
-; count
-	move	dt_bottom,dtb_count
-	sub		dt_top,dtb_count
-	addq	#1,dtb_count
-	.if FASTCOLUMNS
-	bset	#16,dtb_count			; outer 1, inner = pixels
-	.else
-	shlq	#16,dtb_count			; outer = pixels, inner 1
-	addq	#1,dtb_count
-	.endif
+; rows
+	move	dt_bottom,dt_rows
+	sub		dt_top,dt_rows
+	addq	#1,dt_rows
 	
 ; a2pix
 	shlq	#16,dt_top
 	or		dt_x,dt_top				; screen x
 
-;
-;frac += (colnum*tex->height)<<16
-;
-	load	(dt_tex+2),dt_scratch		; tex->height
-	mult	dt_colnum,dt_scratch
-	shlq	#16,dt_scratch
-	add		dt_scratch,dt_frac
-
-; a1pix
-	move	dt_frac,dtb_a1pix
-	shrq	#16,dtb_a1pix
-	
-; a1pix frac
-	movei	#$ffff,dtb_a1frac
-	and		dt_frac,dtb_a1frac
-	
 ;===========
 	
 ; base
@@ -632,6 +652,34 @@ fracpos:
 	
 	movei	#$f02200,dt_blitter
 	movei	#$f02270,dt_scratch2		; iinc blitter register
+
+dt_piece:
+; rows before the row wraps: ceil((colend-frac)/iscale), at most rows
+	move	dt_colend,dt_n
+	sub		dt_frac,dt_n
+	add		dt_iscale,dt_n
+	subq	#1,dt_n
+	div		dt_iscale,dt_n
+	cmp		dt_n,dt_rows			; rows - n
+	jr		CC,dt_nok				; rows >= n
+	nop
+	move	dt_rows,dt_n
+dt_nok:
+
+; a1pix, a1pix frac
+	move	dt_frac,dtb_a1pix
+	shrq	#16,dtb_a1pix
+	movei	#$ffff,dtb_a1frac
+	and		dt_frac,dtb_a1frac
+
+; count
+	move	dt_n,dtb_count
+	.if FASTCOLUMNS
+	bset	#16,dtb_count			; outer 1, inner = pixels
+	.else
+	shlq	#16,dtb_count			; outer = pixels, inner 1
+	addq	#1,dtb_count
+	.endif
 	 
 dt_wait:
 	load	(dt_blitter+14),dt_scratch
@@ -647,8 +695,31 @@ dt_wait:
 	store	dt_top,(dt_blitter+12)
 	store	dt_texturelight,(dt_scratch2)
 	store	dtb_count,(dt_blitter+15)
-	jump	T,(RETURNPOINT)
-	store	dtb_command,(dt_blitter+14)		; delay slot
+	store	dtb_command,(dt_blitter+14)
+	sub		dt_n,dt_rows
+	jump	EQ,(RETURNPOINT)		; all drawn
+	nop
+
+; the rest starts back at the top of the column
+	move	dt_iscale,dt_q
+	mult	dt_n,dt_q				; n * (iscale & $ffff)
+	move	dt_iscale,r29
+	shrq	#16,r29
+	mult	dt_n,r29				; n * (iscale >> 16)
+	shlq	#16,r29
+	add		r29,dt_q
+	add		dt_q,dt_frac			; frac += n*iscale
+dt_rewind:
+	cmp		dt_colend,dt_frac		; frac - colend
+	jr		CS,dt_rewound			; back inside the column
+	nop
+	jr		T,dt_rewind
+	sub		dt_h16,dt_frac			; delay slot
+dt_rewound:
+	shlq	#16,dt_n
+	movei	#dt_piece,r29
+	jump	T,(r29)
+	add		dt_n,dt_top				; delay slot: a2 y += n
 	
 ;==============================================================================
 _R_SegLoop::
@@ -738,7 +809,8 @@ L125:
 ;
 	move	sl_x,r0 ;(x)
 	shlq	#2,r0
-	movei	#_clipbounds,r1
+	movei	#_clipbounds_p,r1
+	load	(r1),r1
 	add		r1,r0
 	load	(r0),sl_floorclipx
 	move	sl_floorclipx,sl_ceilingclipx
@@ -923,7 +995,7 @@ nocliptop:
  	movefa	VR_floorpic,fp_picnum
  	movefa	VR_seglightlevel,fp_lightlevel
  	movefa	VR_stop,fp_stop
-	movei	#348,fp_check
+	movei	#VISPLANE_SIZE,fp_check
 	add		r3,fp_check			; fp_check = floor+1
 
 	movei	#_R_FindPlane,r1
@@ -997,7 +1069,7 @@ noclipbottom:
  	movefa	VR_ceilingpic,fp_picnum
  	movefa	VR_seglightlevel,fp_lightlevel
  	movefa	VR_stop,fp_stop
-	movei	#348,fp_check
+	movei	#VISPLANE_SIZE,fp_check
 	add		r3,fp_check			; fp_check = ceiling+1
 
 	movei	#_R_FindPlane,r1
@@ -1262,7 +1334,8 @@ nonewceiling:
 
 	move	sl_x,r0 ;(x)
 	shlq	#2,r0
-	movei	#_clipbounds,r1
+	movei	#_clipbounds_p,r1
+	load	(r1),r1
 	add		r1,r0
 	addq	#1,sl_ceilingclipx
 	shlq	#8,sl_ceilingclipx
@@ -1300,6 +1373,9 @@ L121:
  .extern _gpucodestart
  .extern _samplecount
  .extern _ref7_start
+ .extern _clipbounds_p
+ .extern _screenwidth
+ .extern _col_a2flags
 
  .long
 _lightmax::
@@ -1332,7 +1408,7 @@ _toptex::
  .long
 
 _clipbounds::
- .dc.l 0		; clipbounds[SCREENWIDTH]
+ .dc.l 0		; clipbounds[160]; wider screens use main RAM (r_detail.c)
  
 	.phrase
 	.68000

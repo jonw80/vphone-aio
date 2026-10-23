@@ -6,6 +6,8 @@ _ref7_start::
 
 DIVCONTROL		.equ	$f0211c
 
+	.include	"colblit.inc"
+
 S_LE	.ccdef  $14     ; PL
 U_LE	.ccdef  $04     ; CC
 S_GT    .ccdef	$18   	; MI
@@ -80,7 +82,8 @@ _R_DrawPlanes::
  move r1,r3
  add r2,r3
  load (r3),r2
- movei #80,r3
+ movei #_centerx,r3
+ load (r3),r3
  move r3,MATH_SIGN
  move r3,MATH_B
  xor r2,MATH_SIGN
@@ -127,10 +130,11 @@ L53:
  store r1,(r0)
 
  movei #15737384,r0
- movei #80416,r1
+ movei #_plane_a2flags,r1	; 16 bpp, screen window, X add pixel
+ load (r1),r1
  store r1,(r0)
 
- movei #_visplanes+348,r0
+ movei #_visplanes+VISPLANE_SIZE,r0
  move r0,r15 ;(pl)
 
  movei #L59,r0
@@ -242,7 +246,7 @@ L68:
 	
 L57:
 
- movei #348,r0
+ movei #VISPLANE_SIZE,r0
  move r15,r1 ;(pl)
  add r0,r1
  move r1,r15 ;(pl)
@@ -286,6 +290,8 @@ L52:
  .extern _finecosine
  .extern _finesine
  .extern _ref8_start
+ .extern _centerx
+ .extern _plane_a2flags
 	
 
 	.extern	_yslope,_distscale,_xtoviewangle
@@ -383,7 +389,7 @@ pl_xloop:
  shrq	#8,pl_t2
  move	pl_x,pl_cmdhigh
  subq	#1,pl_cmdhigh
- shlq	#16,pl_cmdhigh
+ shlq	#20,pl_cmdhigh
 	
 ;------------------------
 ;
@@ -406,11 +412,11 @@ pl_topdif:
  jump	U_GT,(pl_L_topstarts)
  
 ;
-; R_MapPlane ( ((x-1)<<16) + (t1<<8) + spanstart[t1]);
+; R_MapPlane ( ((x-1)<<20) + (t1<<10) + spanstart[t1]);
 ;
  move	pl_t1,scratch			; harmless delay slot
  move	pl_t1,scratch2
- shlq	#8,scratch
+ shlq	#10,scratch
  shlq	#2,scratch2
  or		pl_cmdhigh,scratch
  load	(pl_spanstart+scratch2),scratch2
@@ -458,9 +464,9 @@ pl_bottomdif:
  jump	U_LE,(pl_L_bottomstarts)
 pl_bottomplane:
 ;
-;R_MapPlane ( ((x-1)<<16) + (b1<<8) + spanstart[b1]);
+;R_MapPlane ( ((x-1)<<20) + (b1<<10) + spanstart[b1]);
 ;
- shlq	#8,scratch					; harmless delay slot
+ shlq	#10,scratch					; harmless delay slot
  move	pl_b1,scratch2
  or		pl_cmdhigh,scratch
  shlq	#2,scratch2
@@ -573,19 +579,19 @@ mp_blitcommand	.equr	r27
 	movei	#1+(1<<11)+(1<<13)+(1<<30)+(12<<21),mp_blitcommand
 	
 
-;	x2 = parm>>16;
-;	y = (parm>>8)&0xff;
-;	x1 = parm&0xff;
+;	x2 = parm>>20;
+;	y = (parm>>10)&0xff;
+;	x1 = parm&0x3ff;
 ;	x = x1;
 ;	count = x2 - x+1;
 mp_entry:
 	load	(FP),mp_x2
 	move	mp_x2,mp_y
 	move	mp_y,mp_x
-	shlq	#24,mp_x
-	shrq	#24,mp_x
-	shrq	#16,mp_x2
-	shlq	#16,mp_y
+	shlq	#22,mp_x
+	shrq	#22,mp_x
+	shrq	#20,mp_x2
+	shlq	#14,mp_y
 	shrq	#24,mp_y
 	move	mp_x2,mp_remaining
 	sub		mp_x,mp_remaining

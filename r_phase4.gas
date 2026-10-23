@@ -268,6 +268,7 @@ _R_FinishWallPrep::
 ;localoffset:8  regoffset:24  argoffset:60
 ;===========================================================================
 	.extern	_firstflat,_skytexturep,_xtoviewangle
+	.extern	_centerxfrac,_screenwidth,_viewshift
 
 fw_wc		.equr	r15
 fw_offsetangle	.equr	r19
@@ -841,13 +842,15 @@ L88:
  load (FP+9),r16 ; pop ;(tx)
  load (FP+10),r15 ; pop ;(x1)
  load (FP+2), RETURNPOINT ; pop
- movei #5242880,r0
+ movei #_centerxfrac,r0
+ load (r0),r0
  move r29,r1 ;(RETURNVALUE)
  add r0,r1
  move r1,r0
  sharq #16,r0
  move r0,r15 ;(x1)
- movei #160,r0
+ movei #_screenwidth,r0
+ load (r0),r0
  cmp r15,r0 ;(x1)
  movei #L73,scratch
  jump PL,(scratch)
@@ -898,7 +901,8 @@ L89:
  load (FP+9),r16 ; pop ;(tx)
  load (FP+10),r15 ; pop ;(x1)
  load (FP+2), RETURNPOINT ; pop
- movei #5242880,r0
+ movei #_centerxfrac,r0
+ load (r0),r0
  move r29,r1 ;(RETURNVALUE)
  add r0,r1
  move r1,r0
@@ -971,12 +975,13 @@ L79:
  load (FP+14),r0 ; local vis
  store r21,(r0) ;(77)
 
- movei #160,r0
+ movei #_screenwidth,r0
+ load (r0),r0
  cmp r18,r0 ;(x2)
  movei #L81,scratch
  jump S_LT,(scratch)
  nop
- movei #159,r0
+ subq #1,r0
  move r0,r22 ;(80)
  movei #L82,r0
  jump T,(r0)
@@ -1129,8 +1134,13 @@ L102:
  add scratch,r1
  xor scratch,r1
  sub r1,r0
+ movei #_viewshift,r1
+ load (r1),r1
+ neg r1
+ sh r1,r0
  move r0,r16 ;(x1)
- movei #160,r0
+ movei #_screenwidth,r0
+ load (r0),r0
  cmp r16,r0 ;(x1)
  movei #L92,scratch
  jump PL,(scratch)
@@ -1147,6 +1157,10 @@ L92:
  movei #$ffff8000,scratch
  add scratch,r0
  xor scratch,r0
+ movei #_viewshift,r1
+ load (r1),r1
+ neg r1
+ sh r1,r0
  move r16,r1 ;(x1)
  add r0,r1
  move r1,r0
@@ -1185,12 +1199,13 @@ L98:
  load (FP+12),r0 ; local vis
  store r19,(r0) ;(96)
 
- movei #160,r0
+ movei #_screenwidth,r0
+ load (r0),r0
  cmp r17,r0 ;(x2)
  movei #L100,scratch
  jump S_LT,(scratch)
  nop
- movei #159,r0
+ subq #1,r0
  move r0,r20 ;(99)
  movei #L101,r0
  jump T,(r0)
@@ -1202,9 +1217,13 @@ L101:
  addq #4,r0
  store r20,(r0) ;(99)
 
+ movei #_viewshift,r2
+ load (r2),r2
  load (FP+12),r0 ; local vis
  addq #12,r0
  movei #65536,r1
+ neg r2
+ sh r2,r1		; xscale = FRACUNIT<<viewshift
  store r1,(r0)
 
  load (FP+12),r0 ; local vis
@@ -1220,6 +1239,8 @@ L101:
  load (FP+12),r0 ; local vis
  addq #16,r0
  movei #65536,r1
+ neg r2
+ sh r2,r1		; xiscale = FRACUNIT>>viewshift
  store r1,(r0)
 
  load (FP+12),r0 ; local vis

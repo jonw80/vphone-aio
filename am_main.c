@@ -107,11 +107,11 @@ void DrawLine (pixel_t color, int x1, int y1, int x2, int y2)
 		
 	*(int *)0xf02200 = (int)workingscreen;	/* a1 base register */
 	*(int *)0xf02204 = (4<<3) /* 16 bit pixels */
-					+ (29<<9) /* 160 width image */
+					+ (screenwid<<9) /* screenwidth wide image */
 					+ (3<<16) /* add increment */
 					;							/* a1 flags */
 
-	*(int *)0xf02208 = (180<<16) + 160;		/* a1 clipping size */
+	*(int *)0xf02208 = (180<<16) + screenwidth;	/* a1 clipping size */
 	
 	*(int *)0xf0220c = (y1<<16) + x1;	/* a1 pixel pointer */
 	*(int *)0xf02218 = zero;			/* a1 pixel pointer fraction */
@@ -333,7 +333,7 @@ void AM_Drawer (void)
 	*(int *)0xf02200 = (int)workingscreen;	/* a1 base register */
 		
 	*(int *)0xf02204 = (4<<3)		 	/* 16 bit pixels */
-					+ (29<<9)			/* 160 wide */
+					+ (screenwid<<9)	/* screenwidth wide */
 					+ (0<<16)			/* add phrase */
 					;					/* a1 flags */
 					
@@ -341,9 +341,12 @@ void AM_Drawer (void)
 	*(int *)0xf02240 = zero2;
 	*(int *)0xf02244 = ZERO;		/* source data register */
 	
-	*(int *)0xf0223c = 0x10000 + 160*180;	/* count */
+/* a line at a time: 640*180 pixels would overflow the 16 bit inner count */
+	*(int *)0xf02210 = (1<<16) + ((-screenwidth)&0xffff);	/* a1 step: next line */
+	*(int *)0xf0223c = (180<<16) + screenwidth;	/* count */
 
-	*(int *)0xf02238 = (12<<21);	/* copy source */
+	*(int *)0xf02238 = (12<<21)		/* copy source */
+					+ (1<<9);		/* UPDA1: step at the end of each line */
 
 #endif
 
@@ -351,7 +354,7 @@ void AM_Drawer (void)
 	ox = p->automapx;
 	oy = p->automapy;
 	
-	xshift = scalex[scale];
+	xshift = scalex[scale] - viewshift;
 	yshift = scaley[scale];
 
 	line = lines;
@@ -381,10 +384,10 @@ void AM_Drawer (void)
 		outcode2 = (y2 > 90) << 1;
 		outcode2 |= (y2 < -90) ;
 		if (outcode & outcode2) continue;
-		outcode = (x1 > 80) << 1;
-		outcode |= (x1 < -80) ;
-		outcode2 = (x2 > 80) << 1;
-		outcode2 |= (x2 < -80) ;
+		outcode = (x1 > centerx) << 1;
+		outcode |= (x1 < -centerx) ;
+		outcode2 = (x2 > centerx) << 1;
+		outcode2 |= (x2 < -centerx) ;
 		if (outcode & outcode2) continue;
 				
 		/* */
@@ -417,7 +420,7 @@ void AM_Drawer (void)
 			line->backsector->ceilingheight)
 			color = CRY_BROWN;		
 		
-		DrawLine (color, 80+x1,90-y1,80+x2,90-y2);
+		DrawLine (color, centerx+x1,90-y1,centerx+x2,90-y2);
 		drawn++;
 	}
 	
@@ -472,9 +475,9 @@ void AM_Drawer (void)
 			nx3 >>= xshift;
 			ny3 >>= yshift;
 			
-			DrawLine(color,80+nx1,90-ny1,80+nx2,90-ny2);
-			DrawLine(color,80+nx2,90-ny2,80+nx3,90-ny3);
-			DrawLine(color,80+nx1,90-ny1,80+nx3,90-ny3);
+			DrawLine(color,centerx+nx1,90-ny1,centerx+nx2,90-ny2);
+			DrawLine(color,centerx+nx2,90-ny2,centerx+nx3,90-ny3);
+			DrawLine(color,centerx+nx1,90-ny1,centerx+nx3,90-ny3);
 		}
 	}
 	
@@ -504,9 +507,9 @@ void AM_Drawer (void)
 			nx3 = (x1 + MOBJLENGTH) >> xshift;
 			ny3 = ny2;
 
-			DrawLine(CRY_AQUA,80+nx1,90-ny1,80+nx2,90-ny2);
-			DrawLine(CRY_AQUA,80+nx2,90-ny2,80+nx3,90-ny3);
-			DrawLine(CRY_AQUA,80+nx1,90-ny1,80+nx3,90-ny3);
+			DrawLine(CRY_AQUA,centerx+nx1,90-ny1,centerx+nx2,90-ny2);
+			DrawLine(CRY_AQUA,centerx+nx2,90-ny2,centerx+nx3,90-ny3);
+			DrawLine(CRY_AQUA,centerx+nx1,90-ny1,centerx+nx3,90-ny3);
 		}
 	}
 }

@@ -1093,7 +1093,8 @@ L114:
  load (r0),r0
  store r0,(r1)
 
- movei #5242880,r0
+ movei #_centerxfrac,r0
+ load (r0),r0
  store r0,(FP) ; arg[]
  or r16,scratch ; scoreboard bug ;(tz)
  store r16,(FP+1) ; arg[] ;(tz)
@@ -1126,7 +1127,8 @@ L127:
  store r20,(r0) ;(xscale)
 
  store r20,(FP) ; arg[] ;(xscale)
- movei #144179,r0
+ movei #_stretchx,r0
+ load (r0),r0
  or r0,scratch ; scoreboard bug
  store r0,(FP+1) ; arg[]
  movei #_G_FixedMul,r0
@@ -1401,6 +1403,8 @@ L129:
  .extern _vissprite_p
  .extern _lastsprite_p
  .extern _vissprites
+ .extern _centerxfrac
+ .extern _stretchx
  .extern _phasetime
  .extern _validcount
  .extern _viewplayer

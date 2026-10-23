@@ -20,8 +20,13 @@ from blitter import Blitter, A2_BASE, A2_STEP, A1_FLAGS, A2_FLAGS   # noqa: E402
 from jrisc import JRISC               # noqa: E402
 
 GPU_LOAD, RET = 0xF03100, 0xF03000
-FB, W, H = 0x080000, 160, 180
-SYM = {"_workingscreen": 0x100000, "_framecount": 0x100004}
+FB, W, H = 0x200000, 160, 180         # above the test data even at 640 wide
+# main-RAM variables the overlays read; r_detail.c sets the ones for the view
+SYM = {"_workingscreen": 0x100000, "_framecount": 0x100004, "_spropening_p": 0x100008,
+       "_col_a1screen": 0x10000C, "_col_a2flags": 0x100010, "_screenwidth": 0x100014,
+       "_clipbounds_p": 0x100018}
+WIDE_SPROP = 0x110000                    # where spropening[] goes when it outgrows GPU RAM
+WID = {160: 0x1D, 320: 0x21, 640: 0x25}  # blitter window width codes
 
 
 class GPU(JRISC):
@@ -73,16 +78,22 @@ def w16(mem, a, v):
     mem[a:a + 2] = (v & 0xFFFF).to_bytes(2, "big")
 
 
-def screen(mem):
-    return [int.from_bytes(mem[FB + 2 * i:FB + 2 * i + 2], "big") for i in range(W * H)]
+def screen(mem, sw=W):
+    return [int.from_bytes(mem[FB + 2 * i:FB + 2 * i + 2], "big") for i in range(sw * H)]
 
 
-def base_memory(rng):
+def base_memory(rng, sw=W):
     mem = bytearray(1 << 24)
-    for i in range(W * H):
+    for i in range(sw * H):
         w16(mem, FB + 2 * i, rng.randrange(0x10000))
     w32(mem, SYM["_workingscreen"], FB)
+    w32(mem, SYM["_screenwidth"], sw)
     return mem
+
+
+def screen_flags(syms, name, sw):
+    """a COL_ flag value with the screen window set for sw, as R_SetDetail makes it"""
+    return syms[name] - (WID[160] << 9) + (WID[sw] << 9)
 
 
 # ---- walls -------------------------------------------------------------------
@@ -110,6 +121,80 @@ def draw_walls(ybug, fast, seed=5):
             23: 0x2000000 // scale, 24: rng.randrange(0, 4096), 25: light})
         pixels += blt.pixels
     return screen(mem), pixels
+
+
+def s16(v):
+    v &= 0xFFFF
+    return v - 0x10000 if v & 0x8000 else v
+
+
+def wall_reference(tw, th, scale, iscale, top_h, bot_h, mid, texcol, ceil, floor):
+    """rows and texel indices R_DrawTexture should draw for one column, with
+    the texture tiling down the wall (the row wraps at th)"""
+    top = 90 - ((s16(scale) * s16(top_h)) >> 15)
+    if not top > ceil:
+        top = ceil + 1
+    bottom = 89 - ((s16(scale) * s16(bot_h)) >> 15)
+    if not bottom < floor:
+        bottom = floor - 1
+    if top > bottom:
+        return []
+    frac = mid - (90 - top) * iscale
+    col = (texcol & (tw - 1)) * th
+    h16 = th << 16
+    return [(y, col + (((frac % h16) + (y - top) * iscale) % h16 >> 16)) for y in range(top, bottom + 1)]
+
+
+def test_walls_tile():
+    """walls taller than their texture repeat it, inside the column; the
+    shipped code ran on into the next column and past the texture's end"""
+    checked = wrapped = 0
+    for th in (128, 72):
+        rng = random.Random(th)
+        mem = base_memory(rng)
+        tw = 64
+        tex = [rng.randrange(0x10000) for _ in range(tw * th)]
+        for i, v in enumerate(tex):
+            w16(mem, TEX + 2 * i, v)
+        for i in range(64):                      # what follows the texture
+            w16(mem, TEX + 2 * (tw * th + i), 0xDEAD)
+        for x in range(W):
+            # heights are world units * 64 (6 fraction bits): one texel per unit
+            if x % 2:       # far and tall: more rows of texture than it has
+                scale = rng.randrange(0x0100, 0x02C0)
+                top_h = rng.randrange(6000, 24000)
+                bot_h = rng.randrange(-24000, -2000)
+            else:
+                scale = rng.choice([rng.randrange(0x0100, 0x7FFF), 0x7FFF, 0x2000, 0x0800])
+                top_h = rng.randrange(-2000, 24000)
+                bot_h = rng.randrange(-24000, top_h + 1)
+            mid = rng.randrange(-400, 400) << 16
+            for k, v in enumerate((TEX, tw, th, top_h, bot_h, mid)):
+                w32(mem, TEXP + 4 * k, v)
+            ceil = rng.randrange(-1, 80)
+            floor = rng.randrange(max(ceil + 1, 90), 181)
+            texcol = rng.randrange(0, 4096)
+            iscale = 0x2000000 // scale
+            before = screen(mem)
+            call(mem, "a1drives", 1, "r_phase6", "_R_DrawTexture", {
+                15: TEXP, 19: floor, 20: ceil, 21: x, 22: scale,
+                23: iscale, 24: texcol, 25: 0})          # no shading: pixel = texel
+            after = screen(mem)
+            want = dict(wall_reference(tw, th, scale, iscale, top_h, bot_h, mid, texcol, ceil, floor))
+            for y in range(H):
+                i = y * W + x
+                if y in want:
+                    assert after[i] == tex[want[y]], f"th {th} x {x} y {y}: {after[i]:04x}, want texel {want[y]}"
+                    checked += 1
+                else:
+                    assert after[i] == before[i], f"th {th} x {x} y {y} drawn outside the column"
+            rows = sorted(want)
+            if rows and (rows[-1] - rows[0] + 1) * iscale > th << 16:
+                wrapped += 1
+            assert all(after[j] == before[j] for j in range(W * H) if j % W != x)
+    assert checked > 5000 and wrapped > 20, (checked, wrapped)
+    print(f"  ok  walls tile: {checked} pixels match the texture wrapped at its height "
+          f"({wrapped} columns wrap), none read past the texture")
 
 
 # ---- sprites -----------------------------------------------------------------
@@ -140,39 +225,43 @@ def make_patch(mem, rng, width):
         p += 4
 
 
-def draw_sprite(ybug, fast, colormap, seed, framecount=0):
+def draw_sprite(ybug, fast, colormap, seed, framecount=0, sw=W):
     rng = random.Random(seed)
-    mem = base_memory(rng)
+    mem = base_memory(rng, sw)
     w32(mem, SYM["_framecount"], framecount)
     width = rng.randrange(20, 40)
     make_patch(mem, rng, width)
     yscale = rng.randrange(0x6000, 0x28000)
-    x1 = rng.randrange(-5, 120)
-    xiscale = rng.randrange(0x6000, 0x14000)
-    x2 = min(159, x1 + (width * 0x10000) // xiscale - 1)
+    x1 = rng.randrange(-5, sw - 40)
+    xiscale = rng.randrange(0x6000, 0x14000) // (sw // W)
+    x2 = min(sw - 1, x1 + (width * 0x10000) // xiscale - 1)
     x1c = max(0, x1)
     vis = [x1c, x2, (x1c - x1) * xiscale, 0, xiscale, yscale, (1 << 32) // yscale,
            rng.randrange(10, 90) << 16, PATCH, colormap, 0, 0, 0, 0, PIX]
     for k, v in enumerate(vis):
         w32(mem, VIS + 4 * k, v)
     image, syms, _ = BUILDS[fast, "r_phase8"]
-    sprop = syms["_spropening"]
+    # 160 columns of spropening[] live inside the image; wider ones in main RAM
+    sprop = syms["_spropening"] if sw == W else WIDE_SPROP
+    w32(mem, SYM["_spropening_p"], sprop)
+    w32(mem, SYM["_col_a1screen"], screen_flags(syms, "COL_A1SCREEN", sw))
+    w32(mem, SYM["_col_a2flags"], screen_flags(syms, "COL_A2FLAGS", sw))
     stack = 0xF03F00
     w32(mem, stack, VIS)
     blt = Blitter(mem, ybug)
     gpu = GPU(mem, blt)
-    gpu.load_image(GPU_LOAD, image)        # spropening[] lives inside the image
-    for x in range(W):
+    gpu.load_image(GPU_LOAD, image)
+    for x in range(sw):
         top, bottom = rng.choice([(0, 180), (rng.randrange(0, 60), rng.randrange(100, 181))])
         w32(mem, sprop + 4 * x, (top << 8) | bottom)
     blt.write(A2_BASE, FB)
     blt.write(A2_STEP, 0x10000)
     blt.write(A1_FLAGS, syms["COL_A1FLAGS"])
-    blt.write(A2_FLAGS, syms["COL_A2FLAGS"])
+    blt.write(A2_FLAGS, screen_flags(syms, "COL_A2FLAGS", sw))
     gpu.r[14] = stack
     gpu.r[28] = RET
     gpu.run(syms["_R_DrawVisSprite"], RET)
-    return screen(mem), blt, mem
+    return screen(mem, sw), blt, mem
 
 
 def shade(v, amount):
@@ -200,6 +289,26 @@ def test_sprites_fast_equals_shipped():
             assert got == ref, f"sprite seed {seed} ({ybug}) differs"
     assert total > 2000
     print(f"  ok  sprites: FASTCOLUMNS draws the same {total} pixels as the shipped blits (both bug-11 readings)")
+
+
+def test_wide_sprites():
+    """320 and 640 column views: spropening[] in main RAM, screen window from
+    _col_a2flags.  Check against a direct reading of the vissprite."""
+    for sw in (320, 640):
+        total = 0
+        for seed in range(6):
+            got, blt, mem = draw_sprite("a1drives", 1, 180, seed, sw=sw)
+            ref, blt0, _ = draw_sprite("independent", 0, 180, seed, sw=sw)
+            assert got == ref, f"{sw} wide sprite seed {seed}: fast and shipped differ"
+            before = screen(base_memory(random.Random(seed), sw), sw)
+            vis = [int.from_bytes(mem[VIS + 4 * k:VIS + 4 * k + 4], "big") for k in range(2)]
+            changed = [i % sw for i in range(sw * H) if got[i] != before[i]]
+            assert changed, f"{sw} wide sprite seed {seed} drew nothing"
+            assert vis[0] <= min(changed) and max(changed) <= vis[1], \
+                f"{sw} wide sprite seed {seed} drew outside x {vis[0]}..{vis[1]}"
+            total += blt.pixels
+        assert total > 2000
+        print(f"  ok  sprites {sw} wide: {total} pixels, inside their columns, fast == shipped")
 
 
 # the spectre darkening, as r_phase8.gas defines it (8.16 iinc, signed)
@@ -256,6 +365,8 @@ def test_sky_registers():
 
 if __name__ == "__main__":
     test_walls_fast_equals_shipped()
+    test_walls_tile()
     test_sprites_fast_equals_shipped()
+    test_wide_sprites()
     test_spectre_fuzz()
     test_sky_registers()

@@ -45,6 +45,7 @@ p_move.o \
 p_change.o \
 p_slide.o \
 r_main.o \
+r_detail.o \
 r_data.o \
 r_phase1.o \
 r_phase2.o \
@@ -191,6 +192,8 @@ p_slide.o : p_slide.gas
 	
 	
 r_main.o : r_main.c
+	$(C2OBJ)
+r_detail.o : r_detail.c
 	$(C2OBJ)
 r_data.o : r_data.c
 	$(C2OBJ)

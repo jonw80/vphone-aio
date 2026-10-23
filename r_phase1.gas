@@ -36,11 +36,13 @@ alt_segs		.equr	r11
 
 	.extern	_viewx, _viewy, _viewangle
 	.extern	_lastwallcmd
+	.extern	_viswalls
 	.extern	_nodes
 	.extern	_subsectors,_segs
 	
 	.extern _tantoangle
 	.extern	_viewangletox
+	.extern	_screenwidth, _clipangle
 	.extern _phasetime
 	.extern _numnodes
 	.extern _gpucodestart
@@ -87,11 +89,12 @@ _R_BSP::
  store r1,(r0)
 
  movei #_solidsegs+8,r0
- movei #160,r1
+ movei #_screenwidth,r1
+ load (r1),r1
  store r1,(r0)
 
  movei #_solidsegs+8+4,r0
- movei #161,r1
+ addq #1,r1
  store r1,(r0)
 
  movei #_newend,r0
@@ -145,6 +148,10 @@ sw_rw		.equr	r15
 	moveta	r15,alt_swr15
 		
 	movefa	alt_lastwallcmd,r1
+	movei	#_viswalls+14336,r2		; &viswalls[MAXWALLCMDS] (128 of 112 bytes)
+	cmp		r2,r1
+	jump	EQ,(RETURNPOINT)		; full: drop it rather than overrun viswalls[]
+	nop								; (a wider view resolves more wall pieces)
 	move	r1,sw_rw
 	movei	#112,r2
 	add		r2,r1
@@ -853,8 +860,6 @@ _R_AddLine::
 ; fp		arg 1
 ;==============================================================================
 
-CLIPANGLE		.equ	537395200
-DOUBLECLIPANGLE	.equ	1074790400
 
 al_backsector	.equr	r15
 al_angle1		.equr	r16
@@ -920,8 +925,10 @@ al_doubleclipangle	.equr	r7
 	sub		r0,al_angle1
 	sub 	r0,al_angle2
 
-	movei	#CLIPANGLE,al_clipangle
-	movei	#DOUBLECLIPANGLE,al_doubleclipangle
+	movei	#_clipangle,al_clipangle
+	load	(al_clipangle),al_clipangle
+	move	al_clipangle,al_doubleclipangle
+	add		al_clipangle,al_doubleclipangle
 	
 	move	al_angle1,al_tspan
 	add		al_clipangle,al_tspan
@@ -1342,8 +1349,10 @@ gotboxy:
 
 	moveq	#0,RETURNVALUE		; false until proven otherwise
 	
-	movei	#CLIPANGLE,cb_clipangle
-	movei	#DOUBLECLIPANGLE,cb_doubleclipangle
+	movei	#_clipangle,cb_clipangle
+	load	(cb_clipangle),cb_clipangle
+	move	cb_clipangle,cb_doubleclipangle
+	add		cb_clipangle,cb_doubleclipangle
 	
 	move	cb_angle1,cb_tspan
 	add		cb_clipangle,cb_tspan
@@ -1533,7 +1542,9 @@ _checkcoord::
 
 ;=======================
 _solidsegs::
- .dc.l 0		 ; int[12][4]
+ .dc.l 0		 ; struct {int first, last;} [64], tools/budget.py counts the rest;
+				 ; a 640 column view can split into more gaps than 160 columns
+				 ; resolve, so this has room for more than the shipped 24
  
 	
 	.phrase

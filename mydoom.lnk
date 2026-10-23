@@ -48,6 +48,7 @@ p_move.o
 p_change.o        
 p_slide.o        
 r_main.o
+r_detail.o
 r_data.o
 
 r_phase1.o

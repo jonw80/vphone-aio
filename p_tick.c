@@ -364,10 +364,10 @@ int P_Ticker (void)
 void DrawPlaque (jagobj_t *pl)
 {
 #ifdef JAGUAR
-	int			x,y,w;
-	short		*sdest;
+	int			x,y,w,i,k;
+	short		*sdest, *d, c;
 	byte		*bdest, *source;
-	extern		int isrvmode;
+	extern		boolean frontendlist;
 	
 	while ( !I_RefreshCompleted () )
 	;
@@ -375,7 +375,7 @@ void DrawPlaque (jagobj_t *pl)
 	bufferpage = (byte *)screens[!workpage];
 	source = pl->data;
 	
-	if (isrvmode == 0xc1 + (3<<9) )
+	if (frontendlist)
 	{	/* 320 mode, stretch pixels */
 		bdest = (byte *)bufferpage + 80*320 + (160 - pl->width);
 		w = pl->width;
@@ -389,16 +389,20 @@ void DrawPlaque (jagobj_t *pl)
 		}
 	}
 	else
-	{	/* 160 mode, draw directly */
-		sdest = (short *)bufferpage + 80*160 + (80 - pl->width/2);
+	{	/* the view: 160 mode draws directly, wider ones repeat pixels */
+		k = 1<<viewshift;
+		sdest = (short *)bufferpage + 80*screenwidth + (centerx - pl->width*k/2);
 		w = pl->width;
 		for (y=0 ; y<pl->height ; y++)
 		{
+			d = sdest;
 			for (x=0 ; x<w ; x++)
 			{
-				sdest[x] = palette8[*source++];
+				c = palette8[*source++];
+				for (i=0 ; i<k ; i++)
+					*d++ = c;
 			}
-			sdest += 160;
+			sdest += screenwidth;
 		}
 	}
 	
