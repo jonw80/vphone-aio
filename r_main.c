@@ -284,8 +284,7 @@ void R_DebugScreen (void)
 /*============================================================================= */
 
 int	shadepixel;
-extern	int	workpage;
-extern	pixel_t	*screens[2];	/* [SCREENWIDTH*SCREENHEIGHT];  */
+int	lastphasetime[9];	/* the last frame's phasetime[], for tools/emu/profile.py */
 
 /*
 ==================
@@ -307,9 +306,10 @@ void R_Setup (void)
 	R_SetDetail (detailsetting);
 
 /* */
-/* set up globals for new frame */
+/* set up globals for new frame, in a screen that is neither up nor waiting */
+/* to go up */
 /* */
-	workingscreen = screens[workpage];
+	I_NextScreen ();
 
 #ifdef JAGUAR	
 	*(pixel_t  **)0xf02224 = workingscreen;	/* a2 base pointer */
@@ -402,6 +402,7 @@ void R_Setup (void)
 	vissprite_p = vissprites;
 	lastopening = openings;
 
+	D_memcpy (lastphasetime, (void *)phasetime, sizeof(lastphasetime));
 	phasetime[0] = samplecount;
 }
 
@@ -444,8 +445,7 @@ void R_RenderPlayerView (void)
 
 /* make sure its done now */
 #ifdef JAGUAR
-	while (!I_RefreshCompleted ())
-	;
+	I_WAITFOR (I_RefreshCompleted ());
 #endif
 
 /* */

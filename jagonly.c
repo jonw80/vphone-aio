@@ -12,8 +12,9 @@ JAGUAR MEMORY MAP
 0x177800		sbarback (0x3210)
 0x17aa10		sbarfront (0x3200)
 0x17dc10		debugscreen (0x1bf0)
-0x17f800		screens[0] (MAXSCREENWIDTH*SCREENHEIGHT*2 = 0x38400)
-0x1b7c00		screens[1]
+0x17f800		frame buffers to 0x1f0000 (FreeScreen): four 0x1c200 byte
+				slots, each a 320x180 or 160x180 view or a 320x200 8 bit
+				front end page; a 640x180 view takes two
 0x1f0000		soundbuffer
 0x1f4000		stack (8 bytes of screenshade)
 0x200000		end of ram
@@ -21,7 +22,8 @@ JAGUAR MEMORY MAP
 
 at all times,
 
-pixel_t *workingscreen; will point to the undisplayed screens[workpage]
+pixel_t *workingscreen; will point to a screen that is neither up nor
+waiting to go up (I_NextScreen)
 
 */
 
@@ -29,7 +31,6 @@ boolean		debugscreenstate = false;
 
 boolean		debugscreenactive;
 
-pixel_t	*screens[2];	/* [SCREENWIDTH*SCREENHEIGHT];  */
 short	*palette8;		/* [256]	for translating 8 bit source to 16 bit */
 int		*screenshade;	/* pixels for screen shifting */
 
@@ -37,12 +38,29 @@ byte		*debugscreen;
 extern	jagobj_t	*sbar;
 extern	byte		*sbartop;
 
-int			workpage;	/* which frame is not being displayed */
 int			worklist;	/* which listbuffer is not being used */
 
+/*
+ * Frames go up from the vblank interrupt (init.s): the refresh posts a
+ * finished frame here and goes straight on to the next one in a free
+ * screen, instead of waiting for the vblank to take it.  The interrupt
+ * puts it up once two vblanks have passed since the last one (30 frames a
+ * second at most), with its video modes and colour shift, and sets
+ * lasttics.  pendinglist_p is written last.  With a third screen to draw
+ * in (I_NextScreen), the GPU only waits when it is a whole frame ahead
+ * (r_phase9.gas).
+ */
+int		* volatile pendinglist_p;	/* a finished frame waiting to go up */
+int		pendingvmode;				/* its VMODE, */
+int		pendingsbarvmode;			/* the status bar's, */
+int		pendingshade;				/* its colour add pixel, twice */
+pixel_t	*pendingstart, *pendingend;	/* and its screen */
+pixel_t	* volatile displayedstart, * volatile displayedend;	/* the screen up */
+pixel_t	*workingend;				/* end of the screen being drawn */
+
 int	isrvmode = 0xC1+(7<<9);		/* vmode value set by ISR each screen */
-boolean	frontendlist;			/* the 320 wide 8 bit page is up, not the view */
-								/* (a 320 column view uses the same vmode) */
+boolean	frontendlist;			/* the last list posted shows the 320 wide 8 bit */
+								/* page (displaypage), not a view frame */
 
 extern	int		listbuffer[256];
 extern	int		listbuffer1[256];
@@ -64,8 +82,6 @@ unsigned	branch1, branch2;
 volatile int    junk; 
 int             spincount;  
 int             ZERO = 0, zero = 0, zero2 = 0; 
-
-pixel_t			*framebuffer;
 
 extern	jagobj_t *sbar;
 
@@ -120,8 +136,6 @@ void Jag68k_main (void)
 	sbar = (jagobj_t *)0x177800;
 	sbartop = (byte *)0x17aa10;
 	debugscreen = (byte *)0x17dc10;
-	framebuffer = screens[0] = (pixel_t *)0x17f800; 
-	screens[1] = (pixel_t *)0x1b7c00; 
 	screenshade = (int *)0x1f4000;
 
 #if 0
@@ -190,6 +204,7 @@ soundbuffer[5] = 0xeeee;
 		
 	R_SetDetail (detail_low);	/* the view's size, for the display list; */
 								/* R_Init applies the saved setting */
+	I_NextScreen ();
 	I_Update ();
 	
 /* */
@@ -819,14 +834,14 @@ void I_Update (void)
 	int				delta;
 			
 /* */
-/* set up new list */
+/* set up new list, in the buffer the frame before the last one used: wait */
+/* for the vblank to take the last one, if it is still waiting */
 /* */
-	workingscreen = screens[workpage];
+	I_WAITFOR (!pendinglist_p);
 	worklist_p = listbuffers[worklist];
-	workpage ^= 1;
 	worklist ^= 1;
 	
-/* make working visible now */
+/* make workingscreen visible now */
 
 	delta = (byte *)worklist_p - (byte *)listbuffer;
 	
@@ -1001,27 +1016,93 @@ void I_Update (void)
 
 
 /* */
-/* wait until on the third tic after last display */
+/* post it: the vblank interrupt puts it up */
 /* */
-	do
-	{
-		junk = ticcount;
-	} while (junk-lastticcount < 3);
-
-/* */
-/* start using the list */
-/* */
-	isrvmode = viewvmode;			/* screenwidth * 224, 16 bit color */
+	pendingvmode = viewvmode;			/* screenwidth * 224, 16 bit color */
+	pendingsbarvmode = viewsbarvmode;
+	pendingshade = (shadepixel<<16) + shadepixel;
+	pendingstart = workingscreen;
+	pendingend = workingend;
 	frontendlist = false;
-	readylist_p = worklist_p;
-	do
-	{
-		junk = (int)displaylist_p;
-	} while (junk != (int)readylist_p);
-	lasttics = ticcount - lastticcount;
-	lastticcount = ticcount;
+	pendinglist_p = worklist_p;
 }
  
+
+/*
+====================
+=
+= FreeScreen
+=
+= Somewhere for size bytes that is not up, not waiting to go up and not in
+= [busy, busyend).  The memory is cut into four SLOTSIZE slots, each of
+= which holds a 320x180 view or a front end page; a 640x180 view takes two
+= of them, the first two or the last two.  With nothing free, sleeps until
+= the vblank puts up the frame that is waiting, which frees the one that
+= was up: then at most one view or front end page is up, plus the front
+= end's other page, and one of every size is free.
+=
+====================
+*/
+
+#define	SCREENBASE		0x17f800
+#define	SCREENSEND		0x1f0000
+#define	SLOTSIZE		(320*SCREENHEIGHT*2)
+#define	FRONTPAGESIZE	(320*200)		/* a front end page, 8 bit */
+
+static boolean Overlaps (byte *s, int size, byte *start, byte *end)
+{
+	return s < end && start < s+size;
+}
+
+static pixel_t *FreeScreen (int size, byte *busy, byte *busyend)
+{
+	byte	*s;
+	byte	*pending, *pendend;
+	int		step;
+
+	step = size > SLOTSIZE ? size : SLOTSIZE;
+
+	for ( ; ; )
+	{
+		I_MASKINTS ();				/* the vblank changes what is up */
+		pending = pendend = NULL;
+		if (pendinglist_p)
+		{
+			pending = (byte *)pendingstart;
+			pendend = (byte *)pendingend;
+		}
+		for (s=(byte *)SCREENBASE ; s+size <= (byte *)SCREENSEND ; s+=step)
+			if (!Overlaps (s, size, (byte *)displayedstart, (byte *)displayedend)
+			&& !Overlaps (s, size, pending, pendend)
+			&& !Overlaps (s, size, busy, busyend))
+			{
+				I_UNMASKINTS ();
+				return (pixel_t *)s;
+			}
+		I_SLEEP ();
+	}
+}
+
+/*
+====================
+=
+= I_NextScreen
+=
+= Point workingscreen at a screen to draw the next view frame in.  A 160
+= or 320 column view gets one of four, so the refresh never waits for one;
+= a 640 column view one of two, the double buffering the shipped game had.
+=
+====================
+*/
+
+void I_NextScreen (void)
+{
+	int		size;
+
+	size = screenwidth > 320 ? 2*SLOTSIZE : SLOTSIZE;
+	workingscreen = FreeScreen (size, NULL, NULL);
+	workingend = (pixel_t *)((byte *)workingscreen + size);
+}
 
 /*
 ====================
@@ -1029,14 +1110,14 @@ void I_Update (void)
 = I_TempBuffer
 =
 = return a pointer to a 64k or so temp work buffer for level setup uses
-= (non-displayed frame buffer)
+= (a frame buffer that is not in use)
 =
 ====================
 */
 
 byte	*I_TempBuffer (void)
 {
-	return (byte *)screens[workpage];
+	return (byte *)FreeScreen (FRONTPAGESIZE, NULL, NULL);
 }
 
 
@@ -1074,9 +1155,8 @@ void DoubleBufferSetup (void)
 	while (!I_RefreshCompleted () )
 	;
 	
-	workingscreen = screens[workpage];
-	bufferpage = (byte *)workingscreen;
-	displaypage = (byte *)screens[!workpage];
+	bufferpage = (byte *)FreeScreen (FRONTPAGESIZE, NULL, NULL);
+	displaypage = (byte *)FreeScreen (FRONTPAGESIZE, bufferpage, bufferpage+FRONTPAGESIZE);
 
 	D_memset (bufferpage,0,320*200);
 	D_memset (debugscreen,0,32*224);
@@ -1282,6 +1362,7 @@ void DoubleBufferObjList (void)
 	int		delta;
 	jagobj_t	*backgroundpic;
 
+	I_WAITFOR (!pendinglist_p);		/* a view frame goes up first (I_Update) */
 	worklist_p = listbuffers[worklist];
 		
 /* */
@@ -1404,8 +1485,9 @@ void DoubleBufferObjList (void)
 	isrvmode = 0xc1 + (3<<9);		/* 320 * 224, 16 bit color */
 	frontendlist = true;
 	readylist_p = worklist_p;
-	while (displaylist_p != readylist_p)
-	;
+	I_WAITFOR (displaylist_p == readylist_p);
+	displayedstart = (pixel_t *)displaypage;
+	displayedend = (pixel_t *)(displaypage + FRONTPAGESIZE);
 	
 	worklist ^= 1;
 }

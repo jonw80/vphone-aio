@@ -41,7 +41,8 @@ int			viewpwidth;				/* view width in phrases */
 int			viewxpos;				/* view object xpos */
 int			viewshift;				/* log2(screenwidth/160) */
 int			sbarscaled;				/* status bar objects scaled 2x across */
-extern	int	sbarvmode;				/* gpubase.gas: VMODE below the view */
+int			viewsbarvmode;			/* VMODE below the view: a frame takes it */
+									/* to gpubase.gas's sbarvmode as it goes up */
 
 int			viewangletox[FINEANGLES/2];
 angle_t		xtoviewangle[MAXSCREENWIDTH+1];
@@ -135,7 +136,7 @@ void R_SetDetail (int mode)
 	viewpwidth = screenwidth/4;
 	viewxpos = BASEORGX<<viewshift;
 	sbarscaled = mode == detail_ultra;
-	sbarvmode = sbarscaled ? viewvmode : 0xc1+(3<<9);
+	viewsbarvmode = sbarscaled ? viewvmode : 0xc1+(3<<9);
 
 	/* 16 bpp, screen window, as in colblit.inc */
 	col_a1screen = (4<<3) + (screenwid<<9) + (3<<16) + (1<<18);

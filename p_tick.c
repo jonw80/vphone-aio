@@ -279,8 +279,8 @@ int P_Ticker (void)
 	
 	ticstart = samplecount;
 	
-	while (!I_RefreshLatched () )
-	;		/* wait for refresh to latch all needed data before */
+	I_WAITFOR (I_RefreshLatched ());
+			/* wait for refresh to latch all needed data before */
 			/* running the next tick */
 
 #ifdef JAGAUR
@@ -367,12 +367,12 @@ void DrawPlaque (jagobj_t *pl)
 	int			x,y,w,i,k;
 	short		*sdest, *d, c;
 	byte		*bdest, *source;
-	extern		boolean frontendlist;
 	
 	while ( !I_RefreshCompleted () )
 	;
 
-	bufferpage = (byte *)screens[!workpage];
+/* on the last page or frame posted: up, or about to be */
+	bufferpage = frontendlist ? displaypage : (byte *)pendingstart;
 	source = pl->data;
 	
 	if (frontendlist)
@@ -425,7 +425,7 @@ void DrawSinglePlaque (jagobj_t *pl)
 	while ( !I_RefreshCompleted () )
 	;
 
-	bufferpage = (byte *)screens[!workpage];
+	bufferpage = frontendlist ? displaypage : (byte *)pendingstart;
 	source = pl->data;
 	
 	bdest = (byte *)bufferpage + 80*320 + (160 - pl->width/2);

@@ -7,6 +7,18 @@
 	.extern	_joystick1
 	.extern	_ticcount
 	.extern	_joypad
+	.extern	_pendinglist_p
+	.extern	_pendingvmode
+	.extern	_pendingsbarvmode
+	.extern	_pendingshade
+	.extern	_pendingstart
+	.extern	_pendingend
+	.extern	_displayedstart
+	.extern	_displayedend
+	.extern	_lastticcount
+	.extern	_lasttics
+	.extern	_screenshade
+	.extern	_sbarvmode
 
 	.text
 reset:
@@ -266,8 +278,9 @@ IntInit:
 	or.w     #1,d0
 	move.w   d0,VI                   ;/* Get the maximum VBLANK time */
 
-	move.w   #1, enabled_ints
-	move.w   #1, INT1
+;/* the vblank, and the GPU's (gpubase.gas), which wakes a STOPped 68000 */
+	move.w   #3, enabled_ints
+	move.w   #3, INT1
 
 	move.w   sr,d0
 	and.w    #$f8ff,d0              ;/* Lower the 68K IPL */
@@ -287,7 +300,41 @@ Frame:
 	link    a6, #0
 	movem.l  d0-d5/a0-a5,-(sp)
 
+;/* the GPU's interrupt alone only ends a STOP (I_WAITFOR): clear it */
+	move.w	INT1,d4			;/* pending interrupts */
+	and.w	#3,d4			;/* GPU, video */
+	cmp.w	#2,d4
+	bne	vblank
+	move.w	#$200,d0
+	bra	intdone
+
+vblank:
 ;/*move.w   #0xC1+(7<<9),VMODE           ;/* Set 16 bit CRY/* 160 overscanned */
+
+;/* */
+;/* put up the frame that is waiting, two vblanks or more after the last */
+;/* one: at most 30 a second.  Its list is copied this vblank. */
+;/* */
+	move.l	_pendinglist_p,d1
+	beq	nopending
+	move.l	_ticcount,d2
+	sub.l	_lastticcount,d2
+	moveq	#2,d3
+	cmp.l	d3,d2
+	blt	nopending
+	move.l	d2,_lasttics		;/* vblanks the last frame was up */
+	move.l	_ticcount,_lastticcount
+	move.l	_pendingvmode,_isrvmode
+	move.l	_pendingsbarvmode,_sbarvmode	;/* in GPU RAM, for its object interrupt */
+	move.l	_pendingstart,_displayedstart
+	move.l	_pendingend,_displayedend
+	move.l	_screenshade,a0		;/* the colour shift object's two pixels */
+	move.l	_pendingshade,d2
+	move.l	d2,(a0)+
+	move.l	d2,(a0)
+	move.l	d1,_readylist_p
+	clr.l	_pendinglist_p
+nopending:
 
 	jsr		_CopyObjList
 
@@ -352,7 +399,9 @@ notreset:
 ;/* other VI stuff */
 ;/* */
 	addq.l	#1,_ticcount
-	move.w	#$100, d0
+	lsl.w	#8,d4			;/* clear the video interrupt, and the GPU's */
+	move.w	d4,d0			;/* if that came in too */
+	or.w	#$100, d0
 
 ;/*========================================================================== */
 ;/* */
@@ -360,8 +409,7 @@ notreset:
 ;/* */
 ;/*========================================================================== */
 
-;0:
-
+intdone:
 	or.w     enabled_ints, d0
 	move.w   d0, INT1
 	move.w   #0, INT2

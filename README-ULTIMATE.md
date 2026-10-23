@@ -11,6 +11,7 @@ grounded in the *Jaguar Technical Reference Manual* (Tom & Jerry, rev. 8,
 | [Faster columns](#3-faster-wall-sky-and-sprite-columns) | Walls, sky and sprites are drawn with one blitter inner loop per column instead of one outer-loop pass per pixel. | `colblit.inc`, `r_phase6.gas`, `r_phase8.gas` |
 | [No bus stealing while waiting](#4-no-bus-stealing-while-waiting) | The GPU stops hammering DRAM while it waits for the blitter or the next frame, so the blitter and the 68000 (game logic) get those cycles. | `r_phase7.gas`, `r_phase9.gas` |
 | [Detail: 160, 320 or 640 columns](#6-detail-160-320-or-640-columns) | A **Detail** line in Options. Low is the original 160-column view; High draws 320 columns, one per pixel of the Jaguar's 320-pixel mode; Ultra draws 640 for emulators on a PC. | `r_detail.c`, `r_phase1`-`9.gas`, `jagonly.c`, `gpubase.gas` |
+| [Triple buffering, and a 68000 that sleeps](#8-triple-buffering-and-a-68000-that-sleeps) | The GPU goes straight on to the next frame instead of waiting for the vblank to take the last one, and the 68000 stops (STOP) instead of polling while it waits. On the attract demos High runs 12-20% faster, Low comes within 2% of the 30 fps cap. | `r_phase9.gas`, `init.s`, `jagonly.c`, `gpubase.gas`, `r_phase3.gas` |
 | [Textures tile down tall walls](#7-textures-tile-down-tall-walls) | Walls taller than their texture repeat it, as on the PC, instead of running into the next texture column and then into whatever memory follows the texture. | `r_phase6.gas` |
 | [A complete game from the Jaguar Doom TC](#5-a-complete-game-from-the-jaguar-doom-tc) | `tools/build-tc.sh` turns the PC "Jaguar Doom TC" PWAD plus Freedoom into a full cartridge: all 24 levels, sprites, textures, sounds, music with synthesized instruments, attract-mode demos. Runs in Virtual Jaguar. | `tools/mkwad.py`, `tools/jagmusic.py`, `tools/emu/` |
 | [Verification tooling](#verification) | `tools/verify.sh`: assembles everything, checks the C, checks every GPU/DSP overlay against its RAM budget, and runs functional tests on a JRISC + blitter model. | `tools/`, `tests/` |
@@ -152,13 +153,16 @@ blitter at normal priority and the 68000.**
   variable in DRAM** (`_junk`). Each of those stores took the bus away from
   the blit it was waiting for. The poll now reads only the status register,
   which sits on the GPU's local bus and costs no main-bus cycles.
-* `r_phase9.gas` spins at the end of each frame for the 30 fps frame cap and
+* `r_phase9.gas` spun at the end of each frame for the 30 fps frame cap and
   for the vblank ISR to take the new object list, re-reading `ticcount`,
   `lastticcount` and `displaylist_p` from DRAM and storing to `_junk` on
   every iteration. Meanwhile the 68000 is running the *next* game tic, at
   the lowest bus priority. The constants now stay in registers, and each
   poll is followed by a 64-iteration local-RAM delay (~12 us) so the 68000
   gets the bus back. Worst-case added latency is far below one scanline.
+  (Since [section 8](#8-triple-buffering-and-a-68000-that-sleeps) the only
+  wait left there is for a frame still queued from before, polled the same
+  way, and the 68000 sleeps instead of polling while it waits for the GPU.)
 
 ---
 
@@ -225,6 +229,10 @@ and presses the exit switch. It finished E1M1 into the intermission, and
 gave the screenshots of every episode, spectres and the options screen.
 `tools/emu/detail.py` starts every level at each Detail setting and
 measures the frame rate ([section 6](#6-detail-160-320-or-640-columns)).
+`tools/emu/profile.py` breaks a frame down into the GPU's refresh phases
+and the 68000's tic, and `tools/emu/demobench.py` times the attract demos,
+the same views on every build
+([section 8](#8-triple-buffering-and-a-68000-that-sleeps)).
 `tools/emu/endings.py` plays the episode endings: on E1M8 it rides the lift
 into the star, opens the cage and kills both barons, and `A_BossDeath`
 lowers the tag-666 floor (176 to -136, read from RAM) a second after the
@@ -293,7 +301,8 @@ horizontal detail.
   so Low keeps its speed, and at a main RAM array when wider.
 * The frame buffers grow to 230 KB each (640x180x2). They move down to
   `$17F800` and `$1B7C00`, ending at the sound buffer, and the heap's top
-  moves down with them. That costs the purgeable texture cache 324 KB of its
+  moves down with them (below Ultra the same memory holds four 320x180
+  screens; see [section 8](#8-triple-buffering-and-a-68000-that-sleeps)). That costs the purgeable texture cache 324 KB of its
   800 KB; levels use 70-190 KB of it.
 * **Ultra and the status bar.** The shipped game switches the video mode to
   320 pixels at the status bar from the GPU's object interrupt. Real
@@ -306,11 +315,12 @@ horizontal detail.
   boundaries in every mode (`init.s` aligns the list buffers and
   `CopyObjList` copies 44 longs). Their TYPE is 0, unscaled, below Ultra.
   The mode the interrupt writes is a variable in `gpubase`,
-  `_sbarvmode`.
+  `_sbarvmode`, which each frame sets as it goes up.
 * The automap draws at the view's width, with the same map scale across
   the screen, so finer lines. The pause plaque is drawn 2x or 4x across, and
   is told the 320-pixel front-end page from a 320-column view by a flag
-  (`frontendlist`), since the two use the same VMODE. The automap clears its
+  (`frontendlist`, set by whichever was posted last), since the two use the
+  same VMODE. The automap clears its
   view a line at a time: 640x180 pixels would overflow the blitter's 16-bit
   inner count.
 
@@ -321,16 +331,21 @@ the spot at the start of every level):
 
 | Detail | Mean over 24 levels | Slowest level | Levels at the 30 cap |
 |---|---|---|---|
-| Low (160) | 29.4 frames/s | 26.2 (MAP02, MAP21) | 15 |
-| High (320) | 27.2 frames/s | 20.8 (MAP21) | 8 |
-| Ultra (640) | 21.4 frames/s | 13.8 (MAP21) | 1 |
+| Low (160) | 29.8 frames/s | 28.4 (MAP02) | 18 |
+| High (320) | 28.2 frames/s | 22.6 (MAP21) | 10 |
+| Ultra (640) | 19.8 frames/s | 13.4 (MAP21) | 1 |
 
 (`VJ_OPTS="dram_timing=enabled,blitter_timing=enabled,gpu_pipeline_timing=enabled" tools/emu/detail.py doom-tc.j64 outdir`;
 `tools/emu/run.c` passes `VJ_OPTS` to the core as its options.)
 
+(This is the build with [section 8](#8-triple-buffering-and-a-68000-that-sleeps)'s
+triple buffering. The table this replaced was measured on a build whose
+68000 polled GPU RAM, which the emulator's timing model rewards with
+nearly free blits; see that section.)
+
 The game caps itself at 30 frames a second, which hides Low's real speed
-on most levels. In the slowest level High keeps 79% of Low's frame rate and
-Ultra 53%. The emulator's timing is a model ("still being calibrated", its
+on most levels. In the slowest level, MAP21, High keeps 79% of Low's frame
+rate and Ultra 47%. The emulator's timing is a model ("still being calibrated", its
 options say), so read these as the ratio between the modes, not as what a
 console will show; on hardware, Ultra is for emulators.
 
@@ -380,6 +395,108 @@ one blit, plus a divide to find where it would wrap.
 texture tiled at heights 128 and 72, many of them wrapping, with a marker
 pattern after the texture that must never show. The previous code fails at
 the first wrapping column.
+
+## 8. Triple buffering, and a 68000 that sleeps
+
+**The problem.** The shipped frame loop is double buffered. The GPU draws a
+frame into the screen that isn't up, then, at the end of `r_phase9.gas`,
+waits for the 30 fps cap and for the vblank interrupt to take the new
+object list before it reports the frame done. Only then does the 68000
+start the next one. `tools/emu/profile.py` put that wait at 10-12 ms of
+every frame on MAP21. And a frame that needs 34 ms instead of 33 misses its
+vblank: it stays up for three vblanks instead of two, and the next frame
+can't even start until it is up.
+
+**What it does now.**
+
+* `r_phase9.gas` *posts* the finished frame: its object list, its VMODE and
+  the status bar's, the colour shift, and the screen it is in
+  (`pendinglist_p` and the rest in `jagonly.c`). Then it returns. The
+  vblank interrupt in `init.s` puts the frame up at the first vblank two or
+  more after the last one went up (the same 30 fps cap), copies its list
+  and sets `lasttics`, the game time per frame. The GPU only waits if a
+  frame is still waiting from before, which means it is a whole frame
+  ahead.
+* `I_NextScreen` gives each frame a screen that is neither up nor waiting to
+  go up. The screen memory, `$17F800` up to the sound buffer at `$1F0000`,
+  is four 320x180 slots, so at Low and High the refresh rotates through
+  them and never waits for one. A 640x180 screen takes two slots, so Ultra
+  stays double buffered; a third Ultra screen would have to come out of the
+  texture cache. The automap, the front end's two 8-bit pages, the pause
+  and loading plaques and the level loader's scratch buffer all used to
+  assume "page 0 or 1". They now ask the same allocator (`FreeScreen`),
+  which knows what is up and what is waiting by address range, since a
+  640-column screen covers two smaller ones.
+* Each frame carries the status bar's video mode with it: the interrupt
+  writes `gpubase`'s `_sbarvmode` as the frame goes up. So a Detail change
+  can't show the last frame in the old mode with the status bar in the new
+  one.
+
+**The 68000 waits with STOP.** The 68000 waits for the GPU twice a frame:
+for the refresh to latch the game state, then for it to finish. At Ultra it
+also waits for the vblank to free a screen. It used to poll. It is the
+lowest-priority bus master (TRM p.8), but it has no cache, so every pass of
+a poll loop fetches instructions from DRAM. Each fetch is a bus cycle that
+a higher-priority master asking a moment later has to wait out, plus a DRAM
+page change for whoever comes next. Now `I_WAITFOR(cond)` (`doomdef.h`)
+masks interrupts, tests the condition and executes `STOP #$2000`, which
+unmasks them and stops the 68000 in one instruction. An interrupt that
+arrives between the test and the STOP still wakes it instead of being
+slept through. The vblank wakes it, and so does the GPU, which writes
+CPUINT in its control register (TRM p.60, enabled in INT1, p.16) when phase
+3 has latched the game state and when it finishes a job (`gpubase.gas`,
+which now has no bytes free). The interrupt handler sees a GPU interrupt
+on its own, clears it and returns. If that wake-up were ever lost, the next
+vblank would still end the STOP: the cost is up to 1/60 s, not a hang.
+
+**Measured** in Virtual Jaguar with its timing models on. The attract
+demos are the fair test: a demo is a fixed list of tics, each drawn once,
+so every build draws exactly the same views and only the time differs
+(`tools/emu/demobench.py`):
+
+| Detail | Demo 1, before | after | Demo 2, before | after |
+|---|---|---|---|---|
+| Low | 28.5 frames/s | 29.4 | 28.5 | 29.8 |
+| High | 20.7 | 24.9 | 25.1 | 28.0 |
+| Ultra | 14.5 | 14.6 | 18.9 | 19.0 |
+
+The GPU's own time per frame is the same before and after to 0.1 ms in
+every mode; the gain is all time the GPU used to spend waiting. Over the
+24 levels (`tools/emu/detail.py`, as in section 6):
+
+| Detail | Mean, before | after | Slowest level, before | after | Levels at the 30 cap, before | after |
+|---|---|---|---|---|---|---|
+| Low (160) | 29.1 | 29.8 | 24.8 (MAP21) | 28.4 (MAP02) | 11 | 18 |
+| High (320) | 26.1 | 28.2 | 20.2 (MAP17, MAP21) | 22.6 (MAP21) | 7 | 10 |
+| Ultra (640) | 19.7 | 19.8 | 13.4 (MAP21) | 13.4 (MAP21) | 1 | 1 |
+
+Both demos play out exactly as before: the player's position at every tic
+of both demos matches the previous build.
+
+**A measurement trap.** In Virtual Jaguar with its timing models on, a
+68000 that polls GPU RAM makes blits nearly free. Before each 68000 read
+of GPU RAM, the emulator brings the GPU up to the 68000's time in a short
+slice, and a slice ends by dropping whatever is left of the blitter wait
+the GPU was paying. The previous build polled `gpufinished`, in GPU RAM,
+for most of every frame. A test build of this version that polls DRAM
+instead of stopping is exactly as fast as the STOP build (1563 against
+1562 vblanks for 400 Ultra demo frames), and one that polls GPU RAM again
+is 4% faster (1497) without being any faster on hardware. So "before"
+above is the previous build with only its wait loop changed to poll DRAM,
+and the table in section 6 now shows this build. The numbers it replaced
+were flattered by the same effect.
+
+**What it costs.** When the GPU is a frame ahead, the picture you see is up
+to one frame (33 ms) older than it would have been. The status bar has a
+single buffer that is drawn as each frame starts, so it can change up to
+two frames before the view it goes with.
+
+**Where 30 isn't reached,** the GPU needs more than 33 ms for every frame of
+a stretch, and no amount of buffering helps that. On MAP21 at Low the
+views at the start of the level take about 34 ms each; a few turns later
+they take 17-28 ms, the GPU is ahead and waits, and the game holds 30. The
+68000 isn't the limit: its tic is done about 14 ms after the refresh has
+latched, and then it sleeps.
 
 ## Verification
 
@@ -532,11 +649,17 @@ What to look at, in order of risk:
    objects' 32-byte alignment and their third phrase). Watch the frame rate
    at High against Low in the same spot, and open the automap at each
    setting.
+6. **Triple buffering and STOP.** Movement should look as smooth as before
+   or smoother, with no frame shown out of order and no flashes of the old
+   Detail mode after changing it. If the frame rate on hardware is far
+   below the emulator's, the GPU's interrupt is probably not reaching the 68000 and
+   every wait runs to the next vblank: check INT1 bit 1 (TRM p.16) and the
+   CPUINT writes in `gpubase.gas` and `r_phase3.gas`.
 
 ## Looked at and not done
 
 * **Loading GPU overlays with the blitter** (the manual's recommended method,
-  TRM p.36). The resident `gpubase` has 8 bytes free, the phases rely on
+  TRM p.36). The resident `gpubase` has no bytes free, the phases rely on
   blitter state set by `R_Setup` that the loader would clobber, and the
   estimated saving is about 1 ms per frame.
 * **Deeper light diminishing.** Jaguar lighting subtracts at most
@@ -544,6 +667,19 @@ What to look at, in order of risk:
   colormaps. Steeper is easy (one shift), but subtractive shading crushes
   dark texels to black instead of scaling them, and it is a matter of taste
   that needs eyes on a screen.
+
+* **Triple buffering at Ultra.** A third 640x180 screen is 230 KB, which
+  would come out of the texture cache (section 6).
+* **Writing INT2 early in the vblank handler.** The 68000 keeps its raised
+  bus priority until it writes INT2 (TRM p.17), which outranks the GPU and
+  the blitter. The handler takes about 30 us, the list copy has to finish
+  within the vblank anyway, and the manual says to write INT2 at the end.
+* **Waking the 68000 from the DSP.** The 68000 still polls DSP RAM while
+  the sound mixer finishes before each tic: about 6 ms a frame on MAP21,
+  while the GPU walks the BSP. The DSP can interrupt the CPU too (D_CTRL
+  CPUINT, TRM p.110), through Jerry's interrupt controller to TOM's INT1
+  bit 4. That is the next step; it needs the Jerry side of the interrupt
+  plumbing, and the emulator can't show what it saves.
 
 ## Licence
 

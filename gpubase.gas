@@ -115,21 +115,29 @@ _gpubase_init::
 ;
 ; wait for a load command
 ;
+; With none waiting, set _gpufinished as the completion signal and
+; interrupt the 68000 (G_CTRL CPUINT), which may be STOPped in I_WAITFOR
+; waiting for it.  _gpufinished gets the (nonzero) address in r2.
+;
 ;--------------------
-nothingwaiting:
-	movei	#_gpufinished,r7
-	moveq	#1,r1
-	store	r1,(r7)				; set _gpufinished as completion signal
-
 waitcmd:
+	movei	#_gpufinished,r7
 	movei	#_gpucodestart,r2
 	load	(r2),r1
 	or		r1,r1
-	jr		EQ,nothingwaiting
+	jr		NE,gotcmd
+	moveq	#0,r0			; (delay slot) for gotcmd
+	store	r2,(r7)			; gpufinished = nonzero
+	movei	#$f02114,r6		; G_CTRL
+	moveq	#3,r5			; GPUGO, CPUINT
+	store	r5,(r6)
+idle:
+	load	(r2),r1
+	or		r1,r1
+	jr		EQ,idle
 	nop
-	
-	movei	#_gpufinished,r7
-	moveq	#0,r0
+
+gotcmd:
 	store	r0,(r2)			; gpucodestart = 0
 	store	r0,(r7)			; gpufinished = 0
 	

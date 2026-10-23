@@ -334,8 +334,7 @@ int MiniLoop ( void (*start)(void),  void (*stop)(void)
 /* */
 /* sync up with the refresh */
 /* */
-		while (!I_RefreshCompleted ())
-		;
+		I_WAITFOR (I_RefreshCompleted ());
 		S_UpdateSounds ();
 		drawer ();
 

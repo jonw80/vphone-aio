@@ -62,6 +62,31 @@ _R_Update::
 ;====================
  subq #16,FP
 
+;
+; The list goes in the buffer the frame before last used, which is up
+; until the vblank takes the last frame (_pendinglist_p): wait for that.
+; It only happens when frames come faster than the 30 a second the display
+; shows.  The 68000 is running the next game tic meanwhile, and the GPU
+; outranks it on the bus: poll DRAM only every BUSIDLE local-RAM loops so
+; the 68000 (and the last sprite blit) get the bus back.
+;
+BUSIDLE	.equ	64
+ movei #_pendinglist_p,r3
+ movei #L56,r4
+ jr T,L57
+ nop
+L56:
+ movei #BUSIDLE,r1
+L56delay:
+ subq #1,r1
+ jr NE,L56delay
+ nop
+L57:
+ load (r3),r0
+ cmpq #0,r0
+ jump NE,(r4)
+ nop
+
  movei #_worklist,r0
  load (r0),r0
  shlq #2,r0
@@ -507,91 +532,43 @@ sb_nodebug:
  store r0,(r1)
 
 ;
-; while (ticcount - lastticcount < 2) ;
+; post the frame: the vblank interrupt (init.s) puts it up two vblanks
+; after the last one, with these video modes and colour shift, and sets
+; lasttics.  _pendinglist_p goes last.  Then on to the next frame, in
+; another screen (I_NextScreen), without waiting for this one to go up.
 ;
-; The 68000 is running the next game tic while we sit here, and the GPU
-; outranks it on the bus.  Poll DRAM only every BUSIDLE local-RAM loops so
-; the 68000 (and the last sprite blit) get the bus back.
-;
-BUSIDLE	.equ	64
- movei #_lastticcount,r1
- load (r1),r2				; lastticcount (only written below)
- movei #_ticcount,r3
- movei #L56,r4
- jr T,L57
- nop
-L56:
- movei #BUSIDLE,r1
-L56delay:
- subq #1,r1
- jr NE,L56delay
- nop
-L57:
- load (r3),r0
- sub r2,r0
- moveq #2,r1
- cmp r0,r1
- jump S_LT,(r4)
- nop
-
- movei #_isrvmode,r0
+ movei #_pendingvmode,r0
  movei #_viewvmode,r1	; 0xc1 + (PWIDTH-1)<<9 for the detail setting
  load (r1),r1
  store r1,(r0)
- movei #_frontendlist,r0	; the view is up, not the 320 wide 8 bit page
- moveq #0,r1
+ movei #_pendingsbarvmode,r0
+ movei #_viewsbarvmode,r1
+ load (r1),r1
  store r1,(r0)
- movei #_readylist_p,r0
- store r15,(r0) ;(worklist_p)
-
-;
-; while (displaylist_p != readylist_p) ;   (the vbl isr takes the new list)
-; readylist_p == worklist_p, which we still hold in r15
-;
- movei #_displaylist_p,r3
- movei #L59,r4
- jr T,L60
- nop
-L59:
- movei #BUSIDLE,r1
-L59delay:
- subq #1,r1
- jr NE,L59delay
- nop
-L60:
- load (r3),r0
- cmp r0,r15 ;(worklist_p)
- jump NE,(r4)
- nop
-
- movei #_lasttics,r0
- movei #_ticcount,r1
- load (r1),r2
- movei #_lastticcount,r3
- load (r3),r4
- sub r4,r2
- store r2,(r0)
- load (r1),r0
- store r0,(r3)
- movei #_screenshade,r0
- load (r0),r0
- move r0,r1
- addq #4,r1
+ movei #_pendingshade,r0
  movei #_shadepixel,r2
  load (r2),r2
  move r2,r3
  shlq #16,r3
  add r2,r3
- store r3,(r1)
  store r3,(r0)
-
- movei #_workpage,r0
- load (r0),r1
- moveq #1,r2
- xor r2,r1
+ movei #_pendingstart,r0
+ movei #_workingscreen,r1
+ load (r1),r1
  store r1,(r0)
+ movei #_pendingend,r0
+ movei #_workingend,r1
+ load (r1),r1
+ store r1,(r0)
+ movei #_frontendlist,r0	; the last list posted is a view, not the 320 wide 8 bit page
+ moveq #0,r1
+ store r1,(r0)
+ movei #_pendinglist_p,r0
+ store r15,(r0) ;(worklist_p)
+
  movei #_worklist,r0
  load (r0),r1
+ moveq #1,r2
  xor r2,r1
  store r1,(r0)
 
@@ -605,24 +582,25 @@ L51:
  .extern _a_vde
  .extern _a_vdb
  .extern _debugscreenactive
- .extern _isrvmode
  .extern _sbartop
  .extern _sbar
  .extern _debugscreen
  .extern _screenshade
- .extern _readylist_p
- .extern _displaylist_p
  .extern _listbuffer
  .extern _listbuffers
  .extern _stopobj
  .extern _worklist
- .extern _lasttics
- .extern _lastticcount
  .extern _shadepixel
- .extern _workpage
  .extern _BASEORGY
- .extern _ticcount
  .extern _workingscreen
+ .extern _workingend
+ .extern _pendinglist_p
+ .extern _pendingvmode
+ .extern _pendingsbarvmode
+ .extern _pendingshade
+ .extern _pendingstart
+ .extern _pendingend
+ .extern _viewsbarvmode
  .extern _viewpwidth
  .extern _viewxpos
  .extern _viewvmode

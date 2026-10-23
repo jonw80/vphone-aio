@@ -304,9 +304,6 @@ void AM_Control (player_t *player)
 ==================
 */
 
-extern	int	workpage;
-extern	pixel_t	*screens[2];	/* [SCREENWIDTH*SCREENHEIGHT];  */
-
 void AM_Drawer (void)
 {
 
@@ -324,7 +321,7 @@ void AM_Drawer (void)
 	int		drawn;		/* HOW MANY LINES DRAWN? */
 
 #ifdef JAGUAR
-	workingscreen = screens[workpage];
+	I_NextScreen ();
 	
 /*	D_memset (workingscreen, 0, 160*180*2); */
 		

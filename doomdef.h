@@ -616,7 +616,7 @@ enum {detail_low, detail_high, detail_ultra, NUMDETAILS};
 extern	int		detailmode;			/* the one in use, set by R_SetDetail */
 extern	int		detailsetting;		/* the one chosen in the options */
 extern	int		screenwidth, centerx, screenwid, viewshift;
-extern	int		viewvmode, viewpwidth, viewxpos, sbarscaled;
+extern	int		viewvmode, viewpwidth, viewxpos, sbarscaled, viewsbarvmode;
 
 void R_SetDetail (int mode);
 
@@ -642,6 +642,35 @@ boolean	I_RefreshLatched (void);
 int	I_GetTime (void);
 
 void I_Update (void);
+void I_NextScreen (void);
+
+/*
+ * I_WAITFOR (cond) waits for cond with the 68000 stopped (STOP) instead of
+ * polling, so it leaves the bus to the GPU, blitter and object processor.
+ * The vblank interrupt wakes it, and so does the GPU when it ends a job or
+ * latches the refresh's data (gpubase.gas, r_phase3.gas).  Interrupts are
+ * masked while cond is tested and STOP unmasks them as it stops, so one
+ * that makes cond true can't come in between and be slept through.
+ */
+#ifdef JAGUAR
+#define	I_MASKINTS()	__asm__ volatile ("move.w #0x2700,%%sr" ::: "cc", "memory")
+#define	I_UNMASKINTS()	__asm__ volatile ("move.w #0x2000,%%sr" ::: "cc", "memory")
+#define	I_SLEEP()		__asm__ volatile ("stop #0x2000" ::: "cc", "memory")
+#else
+#define	I_MASKINTS()
+#define	I_UNMASKINTS()
+#define	I_SLEEP()
+#endif
+#define	I_WAITFOR(cond)	do {					\
+		for ( ; ; )								\
+		{										\
+			I_MASKINTS ();						\
+			if (cond)							\
+				break;							\
+			I_SLEEP ();							\
+		}										\
+		I_UNMASKINTS ();						\
+	} while (0)
 
 void I_Error (char *error, ...);
 
@@ -865,8 +894,8 @@ int DSPRead (void volatile *adr);
 extern	boolean		gamepaused;
 extern	jagobj_t	*pausepic;
 
-extern	pixel_t	*screens[2];
-extern	int		workpage;
+extern	boolean	frontendlist;
+extern	pixel_t	*pendingstart;
 
 extern	int	controltype;
 

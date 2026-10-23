@@ -309,6 +309,12 @@ L65:
  load (r1),r1
  store r1,(r0)
 
+; the data the next game tic changes is latched (I_RefreshLatched): wake
+; the 68000 if it is STOPped waiting for that (G_CTRL: GPUGO, CPUINT)
+ movei #$f02114,r0
+ moveq #3,r1
+ store r1,(r0)
+
  movei #_gpucodestart,r0
  movei #_ref4_start,r1
  store r1,(r0)
