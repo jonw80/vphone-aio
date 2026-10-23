@@ -56,7 +56,7 @@ GPU_IMUL:
 
 
 ;====================
-FUZZDARK	.equ	$d80000		; iinc for spectres: -40 intensity (8.16, 24 bits)
+FUZZDARK	.equ	$ec0000		; iinc for spectres: -20 intensity (8.16, 24 bits); additive, so kept mild for dark rooms
 
 _R_DrawVisSprite::
 ;4 dag registers  8 register variables

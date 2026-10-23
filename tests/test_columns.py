@@ -202,6 +202,10 @@ def test_sprites_fast_equals_shipped():
     print(f"  ok  sprites: FASTCOLUMNS draws the same {total} pixels as the shipped blits (both bug-11 readings)")
 
 
+# the spectre darkening, as r_phase8.gas defines it (8.16 iinc, signed)
+FUZZ = ((BUILDS[1, "r_phase8"][1]["FUZZDARK"] >> 16) & 0xFF) - 256 * bool(BUILDS[1, "r_phase8"][1]["FUZZDARK"] & 0x800000)
+
+
 def test_spectre_fuzz():
     checked = shifted = 0
     for seed in range(12):
@@ -217,7 +221,7 @@ def test_spectre_fuzz():
                 continue
             y, x = divmod(i, W)
             off = 1 + (((x + fc) >> 1) & 1)
-            cands = [shade(before[(y + o) * W + x], -40) for o in (off, 0) if y + o < H]
+            cands = [shade(before[(y + o) * W + x], FUZZ) for o in (off, 0) if y + o < H]
             assert after[i] in cands, f"seed {seed}: pixel ({x},{y}) is not a darkened copy from below"
             checked += 1
             shifted += after[i] == cands[0]

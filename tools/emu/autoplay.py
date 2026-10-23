@@ -344,8 +344,13 @@ class Pilot:
                 continue
             self.shot(tag + "-exit")
             for _ in range(3):
+                before = e.sym32("_ticon")
                 e.run(6, "C")
                 e.run(12)
+                # a new MiniLoop (the intermission) restarts ticon; any more
+                # presses would skip it
+                if e.sym32("_gameaction") or e.sym32("_ticon") < before:
+                    return True
             return True
         return False
 

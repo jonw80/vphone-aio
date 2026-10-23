@@ -10,12 +10,15 @@ grounded in the *Jaguar Technical Reference Manual* (Tom & Jerry, rev. 8,
 | [Translucent spectres](#2-translucent-spectres) | Spectres shimmer as a darkened, displaced copy of what's behind them, like PC Doom's fuzz. They used to be drawn as ordinary opaque demons. | `r_phase3.gas`, `r_phase8.gas` |
 | [Faster columns](#3-faster-wall-sky-and-sprite-columns) | Walls, sky and sprites are drawn with one blitter inner loop per column instead of one outer-loop pass per pixel. | `colblit.inc`, `r_phase6.gas`, `r_phase8.gas` |
 | [No bus stealing while waiting](#4-no-bus-stealing-while-waiting) | The GPU stops hammering DRAM while it waits for the blitter or the next frame, so the blitter and the 68000 (game logic) get those cycles. | `r_phase7.gas`, `r_phase9.gas` |
+| [A complete game from the Jaguar Doom TC](#5-a-complete-game-from-the-jaguar-doom-tc) | `tools/build-tc.sh` turns the PC "Jaguar Doom TC" PWAD plus Freedoom into a full cartridge: all 24 levels, sprites, textures, sounds, music with synthesized instruments, attract-mode demos. Runs in Virtual Jaguar. | `tools/mkwad.py`, `tools/jagmusic.py`, `tools/emu/` |
 | [Verification tooling](#verification) | `tools/verify.sh`: assembles everything, checks the C, checks every GPU/DSP overlay against its RAM budget, and runs functional tests on a JRISC + blitter model. | `tools/`, `tests/` |
 
-**Status: builds with free tools into a cartridge image, verified on models
-and a 68000 emulator, not yet run on a Jaguar or a full Jaguar emulator.**
-Making the playable `.j64` needs a dump of your own cartridge, because the
-game data is not included. See [Building](#building) and
+**Status: builds with free tools into a cartridge image that runs in a
+full Jaguar emulator (Virtual Jaguar): title, menus, options, levels from
+all three episodes, music and effects, spectres, intermission, attract
+demos. Not yet run on a real Jaguar.** The game data is not included: bring
+a dump of your own cartridge, or build the TC version from the Jaguar Doom
+TC PWAD and Freedoom. See [Building](#building) and
 [Testing on hardware](#testing-on-hardware).
 
 ---
@@ -87,9 +90,11 @@ invisibility power-up was cut from the port entirely.)
 **The fix.** `R_PrepMobj` (`r_phase3.gas`) tags `MF_SHADOW` things with
 colormap `-1`. `R_DrawVisSprite` (`r_phase8.gas`) then points the blitter's
 A1 **source at the screen being drawn** (160-wide window, +1 row per pixel)
-instead of at the patch, and `SRCSHADE` darkens what it reads by 40
+instead of at the patch, and `SRCSHADE` darkens what it reads by 20
 intensity steps (TRM p.75: "may be used to lighten or darken images"). The
-destination is the normal A2 screen pointer.
+destination is the normal A2 screen pointer. SRCSHADE subtracts rather than
+scales, so the step is kept small: at 40, spectres in dark rooms came out as
+black silhouettes in the emulator; at 20 the room shows through them.
 
 * A Doom patch column is a list of *posts*: runs of opaque pixels. Blitting
   per post means the post list is the transparency mask; no extra pass.
@@ -98,6 +103,10 @@ destination is the normal A2 screen pointer.
   below haven't been overwritten yet (the blit runs downward), so there's no
   smearing; near the bottom of the view the offset falls back to 0.
 * Cost: identical to drawing a normal sprite column.
+
+The shipped levels place no spectres at all (the port could not draw them).
+`tools/mkwad.py --spectres` puts them back: every second demon on MAP09 and
+later becomes one.
 
 ## 3. Faster wall, sky and sprite columns
 
@@ -151,6 +160,76 @@ blitter at normal priority and the 68000.**
 
 ---
 
+## 5. A complete game from the Jaguar Doom TC
+
+The Jaguar Doom TC (`jaguartc.wad`) is a PC-port PWAD that
+recreates the Jaguar levels (with their Jaguar order, textures, status bar
+and intermission text) and borrows sprites, sounds, music and most textures
+from DOOM.WAD. `tools/build-tc.sh jaguartc.wad freedoom1.wad doom-tc.j64`
+turns it back into a Jaguar cartridge, taking everything it borrows from
+[Freedoom](https://freedoom.github.io/) (BSD licence) instead:
+
+```sh
+tools/build-tc.sh jaguartc.wad freedoom1.wad doom-tc.j64     # about 3 seconds
+tools/emu/emulate.sh doom-tc.j64                             # or any Jaguar emulator
+```
+
+`tools/mkwad.py` writes the WAD the way the engine reads it, all of it taken
+from the loaders and the GPU code rather than guessed:
+
+* **Sprites** at the exact lump numbers `sprinfo.c` was generated with
+  (0-1217): an uncompressed patch header + post list read in place from ROM
+  (posts long-aligned, since the GPU reads them as longs), and the opaque
+  pixels LZSS-packed in the next lump. Rotations and mirrored views follow
+  each frame's flip flags. Weapon sprites are halved in width and their
+  offsets moved: `R_FinishPSprite` draws them 1:1 on the 160x180 view,
+  whose pixels are twice as wide as the PC's.
+* **Textures** (71, of the 128 the engine holds) composited from patches,
+  column-major, power-of-2 wide; the TC's own artwork where it has it,
+  Freedoom's definitions otherwise. One texture shares its name with a
+  sound (`METAL`); since texture pixels are found by a backwards name
+  search, it is renamed in the level data.
+* **Flats** with the `NUKAGE`/`FWATER`/`LAVA` cycles kept contiguous.
+* **Levels**: the TC's maps renumbered MAP01-MAP24 by its MAPINFO
+  `levelnum`s (E1M1-E1M8, E2M1-E2M8, E3M1, E3M3-E3M8, E1M9).
+* **Graphics** as jagobjs: title and credits, the 4-bit `M_TITLE` menu
+  background, menu labels and both fonts drawn from Freedoom's big font in
+  red, status bar (the TC's Jaguar bar), faces, digits padded to a common
+  cell (`ST_Drawer` erases old numbers using the minus sign's height),
+  intermission labels, plaques.
+* **Sounds** resampled to 11025 Hz. Sounds no code path plays (cyberdemon
+  and spider mastermind, which the port lacks) are short stubs, to fit.
+* **Music** (`tools/jagmusic.py`): Freedoom's MIDI songs converted to the
+  DSP sequencer's event stream (10 voices, voice stealing, volume,
+  expression, pitch bend, sustain pedal). Instruments are not in a MIDI
+  file, so they are synthesized from the IWAD's `GENMIDI` OPL2 patches
+  with a two-operator FM model: envelope baked into the sample, loop over
+  the steady part for sustaining patches, base pitch chosen so the loop
+  is a whole number of periods.
+* **LZSS** with a greedy longest-match search; `tests/test_lzss.py` runs the
+  game's own decoders (`decomp.gas` for `W_ReadLump`, `R_decode` in
+  `r_phase5.gas` for pixels) on its output in the JRISC model.
+
+The image is 3.63 MB of WAD with 300 KB to spare in the 4 MB cartridge.
+
+**Played in the emulator.** `tools/emu/run.c` has a control mode (buttons,
+RAM peek/poke, screenshots, WAV capture) and `tools/emu/drive.py` drives it
+from Python. `tools/emu/autoplay.py` plays a level by itself: it plans a
+route to the exit on the level geometry (blocking lines, steps, doors,
+solid things, collision boxes the way `P_CheckPosition` sees them), steers
+by reading the player's position from emulated RAM, fights what it sees
+and presses the exit switch. It finished E1M1 into the intermission, and
+gave the screenshots of every episode, spectres and the options screen.
+The two attract-mode demos in `tools/demos/` were recorded by it with the
+game's own demo recorder (`demorecording` set during the level load, the
+buffer in the free 7.9 KB after the first frame buffer), and replay
+exactly: playback ends at the position where the recording ended.
+
+**Found on the way.** `S_Init` started its instrument loop on the
+`INSTSTRT` marker itself and stored that lump's "instrument number" (3386)
+far past the end of `instruments[256]`; it now starts after the marker and
+bounds-checks.
+
 ## Verification
 
 ```sh
@@ -178,6 +257,8 @@ tools/verify.sh
      sequencer state. Also: the mid-window sound fix against a Python model
      of the mixing arithmetic (and a check that the shipped mixer fails it),
      clock resync, no stray DSP RAM writes, stack use (104 bytes).
+   * `test_lzss.py` unpacks the converter's LZSS with the shipped GPU
+     decoders (`decomp.gas`, and `R_decode` with its CRY conversion).
    * `test_columns.py` runs the real `R_DrawTexture` and `R_DrawVisSprite`:
      with `FASTCOLUMNS` on and off they must draw **identical pixels** for
      walls and sprites under **both** readings of bug #11 (A2's Y add bit
@@ -205,6 +286,9 @@ tools/build.py                                     # -> build/doom.bin, doom.elf
 tools/mkrom.py --dump your-jaguar-doom.j64 -o doom-ultimate.j64
 #   or:  tools/mkrom.py --wad jagdoom.wad -o doom-ultimate.j64
 ```
+
+For the TC version: `tools/build-tc.sh jaguartc.wad freedoom1.wad doom-tc.j64`
+(see [section 5](#5-a-complete-game-from-the-jaguar-doom-tc)).
 
 `build.py` needs rmac (fetched by `verify.sh`) and an m68k gcc
 (`m68k-linux-gnu-gcc`); `mkrom.py` needs only Python and `build/`.
@@ -309,3 +393,6 @@ What to look at, in order of risk:
 The Jaguar Doom source is covered by id Software's limited-use licence in
 `license.txt` (non-commercial, educational use). These changes don't alter
 that; don't distribute builds for money.
+
+A TC image contains the TC's own data and Freedoom's (BSD licence, see
+Freedoom's `COPYING`); it is for your own use, not for distribution.
