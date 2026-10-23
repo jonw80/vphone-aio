@@ -11,6 +11,9 @@
 #      scratch arrays that live past `codeend` and leaving room for the stack
 #   4. tests/test_*.py: functional tests that run the GPU/DSP code on
 #      tools/jrisc.py, a JRISC model written from the manual
+#   5. tools/build.py links doom.bin; tools/check_image.py re-assembles every
+#      GPU/DSP block at its linked addresses and compares it with the image;
+#      tests/smoke_boot.py boots the cartridge's 68000 code in Unicorn
 #
 # Usage:  tools/verify.sh            (run from anywhere)
 #
@@ -63,6 +66,20 @@ echo "== functional tests (tools/jrisc.py DSP/GPU model)"
 for t in "$ROOT"/tests/test_*.py; do
 	RMAC="$RMAC" python3 "$t" || { echo "FAIL  $(basename "$t")"; fail=1; }
 done
+
+if command -v "$CC" > /dev/null 2>&1; then
+	echo "== full build (tools/build.py) and boot smoke test"
+	python3 "$ROOT/tools/build.py" || fail=1
+	python3 "$ROOT/tools/check_image.py" || fail=1
+	if command -v qemu-m68k > /dev/null 2>&1; then
+		python3 "$ROOT/tests/check_lib68k.py" || fail=1
+	fi
+	if python3 -c "import unicorn" 2> /dev/null; then
+		python3 "$ROOT/tests/smoke_boot.py" || fail=1
+	else
+		echo "== (pip install unicorn to run tests/smoke_boot.py)"
+	fi
+fi
 
 if [ $fail -ne 0 ]; then
 	echo "VERIFY FAILED"; exit 1

@@ -13,7 +13,7 @@ extern	int				pitch_bend_bits;
 
 extern	channel_t		music_channels[10];
 
-extern	int				samplecount;
+extern	volatile int		samplecount;
 extern	int				musictime;
 extern	int				next_eventtime;
 extern	unsigned char	*music;

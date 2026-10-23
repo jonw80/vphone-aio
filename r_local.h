@@ -254,7 +254,7 @@ extern	fixed_t		finetangent[FINEANGLES/2];
 extern	int			validcount;
 extern	int			framecount;
 
-extern	int		phasetime[9];
+extern	volatile int	phasetime[9];
 
 
 

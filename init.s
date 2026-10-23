@@ -1,4 +1,4 @@
-.include "/home/scott/Jaguar/include/jaguar.inc"
+.include "jagregs.inc"
 
 	.extern	_Jag68k_main
 	.extern	_readylist_p
@@ -26,7 +26,7 @@ reset:
 ;/* Set up the size of borders */
 ;/* Set VMODE to the desired resolution and color model */
 
-	move.l   ENDRAM,a7            ;/* Put the stack at the top of DRAM */
+	move.l   #ENDRAM,a7           ;/* Put the stack at the top of DRAM */
 	move.w   #$FFFF,VI              ;/* Guarantee NO VI interrupts */
 
 ;/* point the object processor at a stop object until told otherwise */
@@ -232,9 +232,11 @@ reread:
 ;/*========================================================================= */
 ;/* intserv.s */
 ;/*========================================================================= */
-.data
+;/* in .bss rather than .data: rmac's ELF writer drops 68000 .data */
+;/* sections, and IntInit sets this before the isr ever reads it */
+.bss
 
-enabled_ints:   .long   0       ;/* The IRQ-enabled bits in INT1 */
+enabled_ints:   .ds.l   1       ;/* The IRQ-enabled bits in INT1 */
 
 .text
 

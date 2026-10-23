@@ -49,17 +49,17 @@ extern	int		stopobj[2];
 
 int		*listbuffers[2] = {listbuffer1,listbuffer2};
 
-int		*displaylist_p;				/* list currently being displayed */
-int		*readylist_p = stopobj;		/* list to display next frame */
+int		* volatile displaylist_p;				/* list currently being displayed */
+int		* volatile readylist_p = stopobj;		/* list to display next frame */
 int		*worklist_p, *work_p;		/* list currently being built */
 
-int             joypad[32]; 
-int             joystick1; 
+volatile int    joypad[32]; 
+volatile int    joystick1; 
 volatile int    ticcount; 
  
 unsigned	branch1, branch2;
  
-int             junk; 
+volatile int    junk; 
 int             spincount;  
 int             ZERO = 0, zero = 0, zero2 = 0; 
 
@@ -464,6 +464,12 @@ int	I_GetTime (void)
 ==============================================================================
 */
 
+/* */
+/* With a modern gcc these compile into calls to themselves (it recognises */
+/* the arithmetic and emits the libcall), so tools/build.py defines */
+/* MODERN_GCC and lib68k.S supplies equivalents with the same semantics. */
+/* */
+#ifndef MODERN_GCC
 int __mulsi3 (int a, int b)
 {
 	int             sign;
@@ -553,6 +559,7 @@ unsigned __modsi3 (unsigned aa, unsigned bb)
 {
 	return __umodsi3 (aa,bb);
 }
+#endif	/* MODERN_GCC */
 
 
 #if 1

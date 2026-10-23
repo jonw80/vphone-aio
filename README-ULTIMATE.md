@@ -12,10 +12,11 @@ grounded in the *Jaguar Technical Reference Manual* (Tom & Jerry, rev. 8,
 | [No bus stealing while waiting](#4-no-bus-stealing-while-waiting) | The GPU stops hammering DRAM while it waits for the blitter or the next frame, so the blitter and the 68000 (game logic) get those cycles. | `r_phase7.gas`, `r_phase9.gas` |
 | [Verification tooling](#verification) | `tools/verify.sh`: assembles everything, checks the C, checks every GPU/DSP overlay against its RAM budget, and runs functional tests on a JRISC + blitter model. | `tools/`, `tests/` |
 
-**Status: statically verified and functionally tested on a model, not yet run
-on a Jaguar or an emulator.** Building a ROM needs the Atari toolchain (or
-rmac + rln) and running it needs `jagdoom.wad` dumped from your own
-cartridge. See [Testing on hardware](#testing-on-hardware).
+**Status: builds with free tools into a cartridge image, verified on models
+and a 68000 emulator, not yet run on a Jaguar or a full Jaguar emulator.**
+Making the playable `.j64` needs a dump of your own cartridge, because the
+game data is not included. See [Building](#building) and
+[Testing on hardware](#testing-on-hardware).
 
 ---
 
@@ -197,12 +198,68 @@ manual says it should; they cannot prove the silicon agrees.
 
 ## Building
 
+### With free tools (tested)
+
+```sh
+tools/build.py                                     # -> build/doom.bin, doom.elf, doom.json
+tools/mkrom.py --dump your-jaguar-doom.j64 -o doom-ultimate.j64
+#   or:  tools/mkrom.py --wad jagdoom.wad -o doom-ultimate.j64
+```
+
+`build.py` needs rmac (fetched by `verify.sh`) and an m68k gcc
+(`m68k-linux-gnu-gcc`); `mkrom.py` needs only Python and `build/`.
+
+**The game data is not included.** It is id Software's: bring a dump of
+your own cartridge (4 MB, `$800000-$BFFFFF`) or the WAD from it
+(`$840000` to the end). `mkrom.py` checks it really is the Jaguar Doom WAD,
+accepts word-swapped dumps, keeps the dump's boot header and the WAD
+byte-for-byte, and replaces only `$802000-$83FFFF` with a 44-byte loader
+(`romstub.S`: copy the program to `$4000`, clear its BSS, jump) followed by
+`doom.bin`. The program is 241,568 bytes, leaving about 12 KB free.
+
+What the free-tool build had to deal with, all handled by `build.py`:
+
+* **GPU/DSP `movei` relocations.** `movei` stores its immediate low word
+  first; GNU `ld` patches big-endian, and rmac's ELF writer also stores the
+  addend word-swapped. `build.py` reads which relocations are `movei`s from
+  rmac's a.out output (bit 0 of `r_info`, the flag Atari's `aln` used) and
+  fixes all 487 of them after linking. `tools/check_image.py` then
+  re-assembles every GPU/DSP block at its linked addresses and requires the
+  image to match byte-for-byte (all 21 do).
+* **Modern GCC.** Variables written by the GPU, DSP or vblank interrupt and
+  polled by the 68000 are now `volatile` (GCC 2.6 happened to reload them).
+  The game's own 32-bit multiply/divide helpers in `jagonly.c` compile, under
+  a modern GCC, into calls to themselves, so with `MODERN_GCC` they come from
+  `lib68k.S` instead, with the same semantics including the original's
+  quirks (verified on 200,256 cases under QEMU against a transcription of the
+  C). The distribution libgcc is not used: it is built for the 68020.
+* **`init.s`** needed `jaguar.inc`, which was not released; `jagregs.inc`
+  supplies the registers it uses, from the manual. Its one `.data` variable
+  moved to `.bss`, because rmac's ELF writer drops 68000 `.data` sections
+  (`build.py` now refuses any relocation that lost its target).
+
+`tests/smoke_boot.py` boots the resulting cartridge's 68000 code on
+Unicorn's 68000 model, with a stand-in WAD and the GPU/DSP handshakes
+stubbed: the loader copies the program and clears BSS, `init.s` runs and
+takes vblank interrupts, and the game runs through the EEPROM, zone and WAD
+code until it stops exactly where a stand-in WAD must, with
+`I_Error: "W_GetNumForName: TEXTURE1 not found!"`. It cannot show the GPU
+and DSP code running on the real chips.
+
+**Booting on a console.** The Jaguar boot ROM only starts a cartridge whose
+header carries an Atari-encrypted boot block, and a commercial header can
+verify the contents it was made for, so a modified program may not boot on
+a stock console with your cartridge's original header. The image is meant
+for emulators and for flash carts that load `.j64` files themselves;
+`mkrom.py --header` takes a different 8 KB header if you have one.
+
+### With the original Atari toolchain
+
 The original `Makefile` and `mydoom.lnk` (Atari `mac`/`aln` and the Jaguar
 GCC 2.6 port) are updated: `mixmusic.o` replaces `music.o`, and
 `r_phase6.o`/`r_phase8.o` depend on `colblit.inc`. `music.gas` is kept for
 reference but no longer linked. Load addresses are unchanged: `doom.abs` at
-`$4000`, `jagdoom.wad` at `$840000` (dump it from your own cartridge; the
-WAD is not included and the source's licence does not cover it).
+`$4000`, `jagdoom.wad` at `$840000`.
 
 ## Testing on hardware
 

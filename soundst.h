@@ -62,7 +62,7 @@ extern	int		sfxsample;			/* the sample about to be output */
 /* external buffer for sfx and music */
 extern	int		soundbuffer[EXTERNALQUADS*16]; 
 
-extern	int		samplecount;		/* 22khz sample counter in DSP memory */
+extern	volatile int	samplecount;		/* 22khz sample counter in DSP memory */
 
 /*============================================================================ */
 

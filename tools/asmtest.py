@@ -22,7 +22,7 @@ def assemble(src, entry, syms, overrides=None, auto_base=0x1C0000):
     externs = re.findall(r"^[ \t]*\.extern[ \t]+([^\n;]+)", text, flags=re.M)
     names = [n.strip() for line in externs for n in line.split(",") if n.strip()]
     text = re.sub(r"^[ \t]*\.extern[^\n]*\n", "", text, flags=re.M)
-    defined = set(re.findall(r"^([A-Za-z_][A-Za-z0-9_]*)::?", text, flags=re.M))
+    defined = set(re.findall(r"^([A-Za-z_][A-Za-z0-9_]*)\s*(?:::?|=|\.equ\b)", text, flags=re.M))
     names = [n for n in names if n not in defined]
     table = dict(syms)
     for n in names:

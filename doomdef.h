@@ -735,7 +735,8 @@ void M_AddToBox (fixed_t *box, fixed_t x, fixed_t y);
 /*============================================================================ */
 
 extern	pixel_t	*workingscreen;
-extern	int		junk, spincount;
+extern	volatile int	junk;
+extern	int		spincount;
 
 extern	volatile int		ticcount, joybuttons;
 
@@ -798,7 +799,7 @@ extern	int		sfxvolume, musicvolume;		/* range from 0 to 255 */
 /* */
 /* comnjag.c */
 /*  */
-extern	int		samplecount;
+extern	volatile int	samplecount;
 
 
 void C_Init (void);
@@ -834,8 +835,8 @@ extern	jagobj_t	*backgroundpic;
 
 /*================= */
 
-extern	int	gpucodestart, gpucodeend;		/* gpu funtion control */
-extern int gpufinished;
+extern	volatile int	gpucodestart, gpucodeend;		/* gpu funtion control */
+extern volatile int gpufinished;
 
 extern		volatile int	dspcodestart, dspcodeend, dspfinished;
 
