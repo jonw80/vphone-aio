@@ -69,11 +69,15 @@ static size_t audiob(const int16_t *d, size_t n) {
   if (wav) { fwrite(d, 4, n, wav); wav_frames += n; }
   return n;
 }
-static unsigned pad;     /* bit n = RETRO_DEVICE_ID_JOYPAD n held, player 1 */
+static unsigned pad;     /* bit n = RETRO_DEVICE_ID_JOYPAD n held, player 1; */
+                         /* bit 16+d = keyboard digit d, which the core reads as keypad d */
 static void poll(void) {}
 static int16_t input(unsigned p, unsigned dev, unsigned idx, unsigned id) {
-  if (p || dev != RETRO_DEVICE_JOYPAD) return 0;
-  if (id == RETRO_DEVICE_ID_JOYPAD_MASK) return (int16_t)pad;
+  if (p) return 0;
+  if (dev == RETRO_DEVICE_KEYBOARD)
+    return id >= RETROK_0 && id <= RETROK_9 && (pad >> (16 + id - RETROK_0)) & 1;
+  if (dev != RETRO_DEVICE_JOYPAD) return 0;
+  if (id == RETRO_DEVICE_ID_JOYPAD_MASK) return (int16_t)(pad & 0xffff);
   return id < 16 && (pad >> id) & 1;
 }
 

@@ -22,6 +22,7 @@ CROSS = os.environ.get("CROSS", "m68k-linux-gnu-")
 W = os.path.join(ROOT, "build", "emu")
 
 PAD = {"B": 0, "C": 1, "PAUSE": 2, "OPTION": 3, "U": 4, "D": 5, "L": 6, "R": 7, "A": 8}
+PAD.update({f"K{d}": 16 + d for d in range(10)})    # keypad 0-9 (keyboard digits)
 
 
 def symbols(elf=os.path.join(ROOT, "build", "doom.elf")):
