@@ -246,6 +246,13 @@ code until it stops exactly where a stand-in WAD must, with
 `I_Error: "W_GetNumForName: TEXTURE1 not found!"`. It cannot show the GPU
 and DSP code running on the real chips.
 
+**In an emulator.** `tools/emu/emulate.sh doom-ultimate.j64` builds Virtual
+Jaguar's libretro core (GPL) and a small headless frontend, runs the image,
+and saves screenshots plus a RAM dump. With the stand-in WAD the emulated
+Jaguar shows the game's own start-up log (`GPU_main`, `C_Init` ... 
+`R_InitData`) and then the expected `TEXTURE1 not found` error; with your
+real dump it runs the game.
+
 **Booting on a console.** The Jaguar boot ROM only starts a cartridge whose
 header carries an Atari-encrypted boot block, and a commercial header can
 verify the contents it was made for, so a modified program may not boot on
