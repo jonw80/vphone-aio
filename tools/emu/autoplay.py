@@ -119,9 +119,26 @@ class Level:
             return ln[3] not in LOCKED
         f1, c1 = self.sectors[s_from][:2]
         f2, c2 = self.sectors[s_to][:2]
+        c1, c2 = self.door_ceiling(s_from, c1), self.door_ceiling(s_to, c2)
         if f2 - f1 > 24:
             return False
         return min(c1, c2) - max(f1, f2) >= 56
+
+    def door_ceiling(self, s, ceil):
+        """a closed door's ceiling as it will be once the door is open:
+        just below its lowest neighbouring ceiling, like EV_DoDoor"""
+        if not self.door_sector(s):
+            return ceil
+        if not hasattr(self, "_doorceil"):
+            self._doorceil = {}
+        if s not in self._doorceil:
+            around = []
+            for li, ln in enumerate(self.lines):
+                f, b = self.line_sectors(li)
+                if b is not None and s in (f, b):
+                    around.append(self.sectors[b if f == s else f][1])
+            self._doorceil[s] = max(ceil, min(around) - 4) if around else ceil
+        return self._doorceil[s]
 
     @staticmethod
     def crosses(ax, ay, bx, by, cx, cy, dx, dy):

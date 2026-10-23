@@ -220,6 +220,14 @@ solid things, collision boxes the way `P_CheckPosition` sees them), steers
 by reading the player's position from emulated RAM, fights what it sees
 and presses the exit switch. It finished E1M1 into the intermission, and
 gave the screenshots of every episode, spectres and the options screen.
+`tools/emu/endings.py` plays the episode endings: on E1M8 it rides the lift
+into the star, opens the cage and kills both barons, and `A_BossDeath`
+lowers the tag-666 floor (176 to -136, read from RAM) a second after the
+second one dies; on E3M8 it opens the yellow door, crosses the exit, and
+the intermission, end text and cast call follow (the cast is drawn by the
+68000's `BufferedDrawSprite`, a second check of the sprite format). The
+Jaguar port has no Cyberdemon or Spider Mastermind: E2M8 and E3M8 end
+with barons and cacodemons instead.
 The two attract-mode demos in `tools/demos/` were recorded by it with the
 game's own demo recorder (`demorecording` set during the level load, the
 buffer in the free 7.9 KB after the first frame buffer), and replay
