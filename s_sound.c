@@ -67,15 +67,19 @@ void S_Init(void)
 /*				MUSIC */
 
  	D_memset(instruments, 0, 256 * 4);
- 	lump = W_GetNumForName("inststrt");			/* get available instruments[] */
+/* the instruments are the lumps between the markers: the shipped loop */
+/* started on INSTSTRT itself and stored its "number" (3386) far past */
+/* the end of instruments[] */
+ 	lump = W_GetNumForName("inststrt") + 1;		/* get available instruments[] */
  	end	= W_GetNumForName("instend");
- 	while (lump != end)
+ 	while (lump < end)
  	{
  		instnum = (lumpinfo[lump].name[1]-'0')*100
  				+ (lumpinfo[lump].name[2]-'0')*10
  				+ (lumpinfo[lump].name[3]-'0')
  				+ (lumpinfo[lump].name[0] == 'P' ? 128 : 0);
- 		instruments[instnum] = (sfx_t *) (wadfileptr + lumpinfo[lump].filepos);
+ 		if ((unsigned)instnum < 256)
+ 			instruments[instnum] = (sfx_t *) (wadfileptr + lumpinfo[lump].filepos);
  		lump++;
  	}
  
