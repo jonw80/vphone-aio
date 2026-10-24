@@ -1,0 +1,103 @@
+# Virtual Jaguar 3.10.0 for macOS with the patches in tools/emu/virtualjaguar/: the GPU keeps
+# the stall time it overruns a slice by (so blits cost what the timing model says), and the
+# letter keys and the right stick no longer press Jaguar keypad keys by default.
+#
+# The steps follow upstream's app-package.yml macOS job: two single-architecture builds,
+# merged with lipo, ad-hoc signed (there is no Developer ID here, so Gatekeeper wants
+# right-click > Open the first time).  The shader runtime comes from upstream's own 3.10.0
+# app, which ships it for both architectures, split into one slice per build.
+name: Virtual Jaguar for macOS (patched)
+
+on:
+  push:
+    branches: [jaguar-doom-ultimate]
+    paths:
+      - '.github/workflows/virtualjaguar-macos.yml'
+      - 'tools/emu/virtualjaguar/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    env:
+      VJ_REPO: https://github.com/libretro/virtualjaguar-libretro.git
+      VJ_COMMIT: e7db53678b86e2fceb459e26cf09d2fdaaa4d395   # tag v3.10.0
+      VJ_VERSION: 3.10.0
+      MIN_MACOS: '11.0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get Virtual Jaguar 3.10.0 and apply the patches
+        run: |
+          set -eu
+          git init -q vj
+          git -C vj fetch -q --depth 1 "$VJ_REPO" "$VJ_COMMIT"
+          git -C vj checkout -q FETCH_HEAD
+          for p in tools/emu/virtualjaguar/*.patch; do
+            echo "applying $p"
+            git -C vj apply --verbose "$GITHUB_WORKSPACE/$p"
+          done
+          git -C vj diff --stat
+
+      - name: Shader runtime from the official 3.10.0 app, one slice per architecture
+        run: |
+          set -eu
+          curl -fsSL -o official.zip \
+            "https://github.com/libretro/virtualjaguar-libretro/releases/download/v$VJ_VERSION/VirtualJaguar-$VJ_VERSION-macos-universal.zip"
+          ditto -x -k official.zip official
+          lib="official/Virtual Jaguar.app/Contents/Frameworks/librashader.dylib"
+          lipo -info "$lib"
+          mkdir -p rs
+          lipo "$lib" -thin arm64 -output rs/librashader-arm64.dylib
+          lipo "$lib" -thin x86_64 -output rs/librashader-x86_64.dylib
+
+      - name: Build both architectures
+        working-directory: vj
+        run: |
+          set -eu
+          for arch in arm64 x86_64; do
+            cmake -S app -B "build-$arch" -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_OSX_ARCHITECTURES="$arch" -DCMAKE_OSX_DEPLOYMENT_TARGET="$MIN_MACOS" \
+              -DVJ_APP_FETCH_LIBRASHADER=OFF \
+              -DVJ_LIBRASHADER_LIB="$GITHUB_WORKSPACE/rs/librashader-$arch.dylib" \
+              -DVJ_PACKAGE_VERSION="$VJ_VERSION"
+            cmake --build "build-$arch" --config Release -j4
+            cmake --install "build-$arch" --prefix "$PWD/stage-$arch"
+          done
+
+      - name: Tests (arm64)
+        working-directory: vj
+        continue-on-error: true
+        run: ctest --test-dir build-arm64 -C Release --output-on-failure -E shaders_gl
+
+      - name: Assemble, ad-hoc sign and zip the universal app
+        working-directory: vj
+        run: |
+          set -eu
+          P=app/packaging/macos
+          bash $P/make-universal.sh stage-arm64 stage-x86_64 stage-universal
+          bash $P/make-app.sh stage-universal "dist/Virtual Jaguar.app" "$VJ_VERSION" "$GITHUB_RUN_NUMBER" "$MIN_MACOS"
+          bash $P/check-universal.sh "dist/Virtual Jaguar.app" "$MIN_MACOS"
+          bash $P/codesign.sh sign-app "dist/Virtual Jaguar.app" adhoc
+          codesign --verify --deep --strict "dist/Virtual Jaguar.app"
+          mkdir -p out
+          ditto -c -k --sequesterRsrc --keepParent "dist/Virtual Jaguar.app" \
+            "out/VirtualJaguar-$VJ_VERSION-stallfix-macos-universal.zip"
+          ls -la out
+
+      - name: Smoke test the bundle (upstream's public ROM and frame hash, default settings)
+        working-directory: vj
+        continue-on-error: true
+        run: |
+          "dist/Virtual Jaguar.app/Contents/MacOS/virtualjaguar" --headless --frames 300 \
+            --expect-hash f4c30ea3 test/roms/yarc.j64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VirtualJaguar-macos-universal
+          path: vj/out/*.zip
+          if-no-files-found: error
+          retention-days: 14

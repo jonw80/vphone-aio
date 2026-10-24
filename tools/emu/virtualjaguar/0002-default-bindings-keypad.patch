@@ -1,0 +1,54 @@
+diff --git a/app/src/remap.cpp b/app/src/remap.cpp
+index 43bae6c..c3f08f2 100644
+--- a/app/src/remap.cpp
++++ b/app/src/remap.cpp
+@@ -241,15 +241,11 @@ Profile Profile::builtin(DeviceClass cls, PadCaps caps, bool proPort) {
+         // F1 F2 F5-F8 F11 and Tab are app keys); the face keys are shared with the pad's
+         // (Z/X also fire the mouse buttons, Z is the light gun trigger).
+         // Jaguar Pro Controller (libretro.c, update_input(), pro_controller[]): its X / Y / Z fire
+-        // buttons and the Left / Right shoulders are, on the wire, keypad 9 / 8 / 7 and 4 / 6.  The
+-        // app presses keypad keys itself, so a keyboard player gets all six face buttons and both
+-        // shoulders with no overlay: the top row A S D = X Y Z over the bottom row Z X C = B A C,
+-        // and Q / E = Left / Right shoulder.
+-        add(p, C_K9, Binding::key(SDL_SCANCODE_A));
+-        add(p, C_K8, Binding::key(SDL_SCANCODE_S));
+-        add(p, C_K7, Binding::key(SDL_SCANCODE_D));
+-        add(p, C_K4, Binding::key(SDL_SCANCODE_Q));
+-        add(p, C_K6, Binding::key(SDL_SCANCODE_E));
++        // buttons and the Left / Right shoulders are, on the wire, keypad 9 / 8 / 7 and 4 / 6.
++        // Upstream binds A S D and Q E to them, but a player who reaches for A S D (or presses
++        // any letter to get past a death or loading screen) then presses keypad keys without
++        // knowing it -- in Jaguar Doom keypad 9 opens the automap, and with Pause it warps to
++        // area 9.  So the letters are left free here; bind them under Settings > Input if wanted.
+         add(p, C_D, Binding::key(SDL_SCANCODE_V));
+         add(p, C_E, Binding::key(SDL_SCANCODE_B));
+         add(p, C_F, Binding::key(SDL_SCANCODE_N));
+@@ -278,11 +274,12 @@ Profile Profile::builtin(DeviceClass cls, PadCaps caps, bool proPort) {
+         add(p, C_HELP, Binding::key(SDL_SCANCODE_F3));
+         add(p, C_TVMENU, Binding::key(SDL_SCANCODE_F4));
+     } else {
+-        // SDL's standard gamepad layout.  Chosen so that every keypad key is on the pad
+-        // without opening the overlay: 0-6 sit where the core's own RetroPad defaults
+-        // put them (X, L1, R1, L2, R2, L3, R3); the right stick (dominant axis only)
+-        // carries 7 / 8 / 9 / *, and Guide carries #.  Guide is sometimes claimed by the
+-        // OS, so the overlay (Share/Capture, or F2 / View menu) is the way to reach # then.
++        // SDL's standard gamepad layout.  Keypad 0-6 sit where the core's own RetroPad
++        // defaults put them (X, L1, R1, L2, R2, L3, R3) and Guide carries #.  Upstream also
++        // puts 7 / 8 / 9 / * on the right stick; that is left off here, so a stick that
++        // drifts cannot press keypad keys -- reach them with the overlay (Share/Capture, or
++        // F2 / View menu) or bind them under Settings > Input.  Guide is sometimes claimed
++        // by the OS, so the overlay is the way to reach # then.
+         add(p, C_UP, Binding::button(SDL_GAMEPAD_BUTTON_DPAD_UP));
+         add(p, C_DOWN, Binding::button(SDL_GAMEPAD_BUTTON_DPAD_DOWN));
+         add(p, C_LEFT, Binding::button(SDL_GAMEPAD_BUTTON_DPAD_LEFT));
+@@ -301,10 +298,6 @@ Profile Profile::builtin(DeviceClass cls, PadCaps caps, bool proPort) {
+         }
+         add(p, C_K5, Binding::button(SDL_GAMEPAD_BUTTON_LEFT_STICK));
+         add(p, C_K6, Binding::button(SDL_GAMEPAD_BUTTON_RIGHT_STICK));
+-        add(p, C_K7, Binding::axis(SDL_GAMEPAD_AXIS_RIGHTX, -1));
+-        add(p, C_K8, Binding::axis(SDL_GAMEPAD_AXIS_RIGHTY, -1));
+-        add(p, C_K9, Binding::axis(SDL_GAMEPAD_AXIS_RIGHTX, 1));
+-        add(p, C_STAR, Binding::axis(SDL_GAMEPAD_AXIS_RIGHTY, 1));
+         add(p, C_HASH, Binding::button(SDL_GAMEPAD_BUTTON_GUIDE));
+         add(p, C_OVERLAY, Binding::button(SDL_GAMEPAD_BUTTON_MISC1));
+         // The exotic devices.  The buttons ride the same physical inputs the core's own RetroPad
