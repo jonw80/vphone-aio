@@ -180,6 +180,13 @@ tools/build-tc.sh jaguartc.wad freedoom1.wad doom-tc.j64     # about 3 seconds
 tools/emu/emulate.sh doom-tc.j64                             # or any Jaguar emulator
 ```
 
+If you own Doom, a fourth argument takes the sprites from your DOOM.WAD
+instead of Freedoom's (everything else still comes from Freedoom):
+`tools/build-tc.sh jaguartc.wad freedoom1.wad doom-tc.j64 doom.wad`. The
+two share palette 0, so nothing else changes. That image holds id
+Software's art, so keep it for yourself. With the Ultimate Doom sprites
+the WAD is 100 KB smaller (406 KB left in the cartridge, against 304 KB).
+
 `tools/mkwad.py` writes the WAD the way the engine reads it, all of it taken
 from the loaders and the GPU code rather than guessed:
 

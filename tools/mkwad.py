@@ -3,12 +3,15 @@
 mkwad.py - build a Jaguar Doom WAD from PC-format Doom WADs.
 
     tools/mkwad.py --pwad jaguartc.wad --iwad freedoom1.wad -o jagdoom.wad
+    tools/mkwad.py --pwad jaguartc.wad --iwad freedoom1.wad --sprites doom.wad -o jagdoom.wad
 
 The levels, textures and status bar come from the PWAD (made for the
 "Jaguar Doom TC" recreation, which runs on PC ports on top of DOOM.WAD);
 everything the PWAD borrows from DOOM.WAD is taken from the IWAD instead.
 With Freedoom's freedoom1.wad as the IWAD the result contains no id
-Software data beyond what the PWAD itself carries.
+Software data beyond what the PWAD itself carries.  --sprites takes the
+sprites (between S_START and S_END) from a third WAD, such as your own
+DOOM.WAD, over the IWAD's; everything else still comes from the IWAD.
 
 The output follows the Jaguar engine's own WAD rules (see the loaders in
 w_wad.c, r_data.c, p_setup.c, s_sound.c and the GPU decoders):
@@ -88,13 +91,14 @@ class PCWad:
 class Assets:
     """Name lookup with the PWAD over the IWAD, per namespace."""
 
-    def __init__(self, pwad, iwad):
+    def __init__(self, pwad, iwad, sprwad=None):
         self.p, self.i = pwad, iwad
         self.patches = {**iwad.between({"P_START", "PP_START"}, {"P_END", "PP_END"}),
                         **pwad.between({"P_START", "PP_START"}, {"P_END", "PP_END"})}
         self.flats = {**iwad.between({"F_START", "FF_START"}, {"F_END", "FF_END"}),
                       **pwad.between({"F_START", "FF_START"}, {"F_END", "FF_END"})}
         self.sprites = {**iwad.between({"S_START", "SS_START"}, {"S_END", "SS_END"}),
+                        **(sprwad.between({"S_START", "SS_START"}, {"S_END", "SS_END"}) if sprwad else {}),
                         **pwad.between({"S_START", "SS_START"}, {"S_END", "SS_END"})}
 
     def get(self, name):
@@ -484,8 +488,8 @@ class JagWad:
 
 
 class Converter:
-    def __init__(self, pwad, iwad, log=print):
-        self.a = Assets(pwad, iwad)
+    def __init__(self, pwad, iwad, log=print, sprwad=None):
+        self.a = Assets(pwad, iwad, sprwad)
         self.pwad, self.iwad = pwad, iwad
         self.log = log
         self.t = engine_tables()
@@ -1081,6 +1085,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--pwad", required=True, help="PC-format levels/art, e.g. jaguartc.wad")
     ap.add_argument("--iwad", required=True, help="PC IWAD for everything else, e.g. freedoom1.wad")
+    ap.add_argument("--sprites", help="take the sprites from this WAD instead, e.g. your DOOM.WAD")
     ap.add_argument("-o", "--output", default="jagdoom.wad")
     ap.add_argument("--check", action="store_true", help="verify every compressed lump decodes")
     ap.add_argument("-j", "--jobs", type=int, default=None)
@@ -1089,7 +1094,7 @@ def main():
     ap.add_argument("--spectres", action="store_true",
                     help="make every second demon on MAP09 and later a spectre")
     a = ap.parse_args()
-    conv = Converter(PCWad(a.pwad), PCWad(a.iwad))
+    conv = Converter(PCWad(a.pwad), PCWad(a.iwad), sprwad=PCWad(a.sprites) if a.sprites else None)
     conv.demo_files = {1: a.demo1, 2: a.demo2}
     conv.spectres = a.spectres
     conv.run()
