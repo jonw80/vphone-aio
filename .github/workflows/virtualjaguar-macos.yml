@@ -50,9 +50,11 @@ jobs:
           ditto -x -k official.zip official
           lib="official/Virtual Jaguar.app/Contents/Frameworks/librashader.dylib"
           lipo -info "$lib"
-          mkdir -p rs
-          lipo "$lib" -thin arm64 -output rs/librashader-arm64.dylib
-          lipo "$lib" -thin x86_64 -output rs/librashader-x86_64.dylib
+          # Each slice keeps the name librashader.dylib: the install step (VJPackage.cmake)
+          # bundles only librashader.* from beside the executable.
+          mkdir -p rs/arm64 rs/x86_64
+          lipo "$lib" -thin arm64 -output rs/arm64/librashader.dylib
+          lipo "$lib" -thin x86_64 -output rs/x86_64/librashader.dylib
 
       - name: Build both architectures
         working-directory: vj
@@ -62,7 +64,7 @@ jobs:
             cmake -S app -B "build-$arch" -DCMAKE_BUILD_TYPE=Release \
               -DCMAKE_OSX_ARCHITECTURES="$arch" -DCMAKE_OSX_DEPLOYMENT_TARGET="$MIN_MACOS" \
               -DVJ_APP_FETCH_LIBRASHADER=OFF \
-              -DVJ_LIBRASHADER_LIB="$GITHUB_WORKSPACE/rs/librashader-$arch.dylib" \
+              -DVJ_LIBRASHADER_LIB="$GITHUB_WORKSPACE/rs/$arch/librashader.dylib" \
               -DVJ_PACKAGE_VERSION="$VJ_VERSION"
             cmake --build "build-$arch" --config Release -j4
             cmake --install "build-$arch" --prefix "$PWD/stage-$arch"
@@ -70,6 +72,8 @@ jobs:
 
       - name: Tests (arm64)
         working-directory: vj
+        env:
+          VJ_REQUIRE_LIBRASHADER: 1     # the shader runtime must load: fail, not skip
         run: ctest --test-dir build-arm64 -C Release --output-on-failure -E shaders_gl
 
       - name: Assemble, ad-hoc sign and zip the universal app
@@ -80,6 +84,14 @@ jobs:
           bash $P/make-universal.sh stage-arm64 stage-x86_64 stage-universal
           bash $P/make-app.sh stage-universal "dist/Virtual Jaguar.app" "$VJ_VERSION" "$GITHUB_RUN_NUMBER" "$MIN_MACOS"
           bash $P/check-universal.sh "dist/Virtual Jaguar.app" "$MIN_MACOS"
+          lib="dist/Virtual Jaguar.app/Contents/Frameworks/librashader.dylib"
+          lipo -info "$lib"
+          [ "$(lipo -archs "$lib" | tr ' ' '\n' | sort | tr '\n' ' ')" = "arm64 x86_64 " ]
+          for d in cheats libretro-db shaders; do
+            if [ -d "build-arm64/$d" ]; then
+              test -d "dist/Virtual Jaguar.app/Contents/Resources/$d" || { echo "::error::$d/ missing from the bundle"; exit 1; }
+            fi
+          done
           bash $P/codesign.sh sign-app "dist/Virtual Jaguar.app" adhoc
           codesign --verify --deep --strict "dist/Virtual Jaguar.app"
           mkdir -p out
@@ -90,8 +102,12 @@ jobs:
       - name: Smoke test the bundle (upstream's public ROM and frame hash, default settings)
         working-directory: vj
         run: |
+          set -eu
           "dist/Virtual Jaguar.app/Contents/MacOS/virtualjaguar" --headless --frames 300 \
             --expect-hash f4c30ea3 test/roms/yarc.j64
+          # the bundled shader runtime loads and parses the bundled presets
+          VJ_REQUIRE_LIBRASHADER=1 VJ_LIBRASHADER="$PWD/dist/Virtual Jaguar.app/Contents/Frameworks/librashader.dylib" \
+            build-arm64/vj_shader_tests library
 
       - uses: actions/upload-artifact@v4
         with:
