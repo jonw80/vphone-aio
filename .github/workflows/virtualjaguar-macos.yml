@@ -70,7 +70,6 @@ jobs:
 
       - name: Tests (arm64)
         working-directory: vj
-        continue-on-error: true
         run: ctest --test-dir build-arm64 -C Release --output-on-failure -E shaders_gl
 
       - name: Assemble, ad-hoc sign and zip the universal app
@@ -90,7 +89,6 @@ jobs:
 
       - name: Smoke test the bundle (upstream's public ROM and frame hash, default settings)
         working-directory: vj
-        continue-on-error: true
         run: |
           "dist/Virtual Jaguar.app/Contents/MacOS/virtualjaguar" --headless --frames 300 \
             --expect-hash f4c30ea3 test/roms/yarc.j64

@@ -15,4 +15,13 @@ Applied to libretro/virtualjaguar-libretro at `e7db536` (tag v3.10.0) by
   to keypad 9 8 7 / 4 6, and the default gamepad no longer puts keypad 7 8 9 * on the
   right stick. Pressing those letters, or a drifting stick, pressed keypad keys in
   whatever game was running; in Jaguar Doom keypad 9 opens the automap, and with Pause
-  it warps to area 9. The keys can be bound again under Settings > Input.
+  it warps to area 9. The keys can be bound again under Settings > Input. The tests
+  that pinned the old defaults (`remap_unit`, `devices_unit`, `devices_e2e`,
+  `controls_overlay_keyboard`) now check the new ones: the number row still reaches the
+  Pro Controller's X Y Z / L R (keypad 9 8 7 / 4 6), A S D Q E and the right stick press
+  nothing, a right stick bound by hand still resolves to one key, and the defaults
+  fingerprint is updated. Against upstream's `remap.cpp` the updated tests fail, so they
+  do test the change.
+
+The workflow runs the app's test suite (all but the OpenGL shader test, which needs a GPU)
+and a headless smoke test of the finished bundle; either failing fails the build.
